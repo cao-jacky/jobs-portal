@@ -39,6 +39,9 @@
   }
 
   *,*::before,*::after { box-sizing:border-box; }
+  /* Author display rules outrank the UA sheet's [hidden]{display:none}, so any
+     flex or grid element carrying the hidden attribute would stay visible. */
+  [hidden] { display:none !important; }
   body { margin:0; background:var(--plane); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.5; }
   .wrap { max-width:1220px; margin:0 auto; padding:32px 24px 72px; display:flex; flex-direction:column; gap:28px; }
 
