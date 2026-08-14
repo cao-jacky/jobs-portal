@@ -194,6 +194,11 @@
   #toast.bad { background:var(--critical); color:#fff; }
   .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   .badge { font-family:var(--mono); font-size:10.5px; padding:2px 7px; border-radius:999px; border:1px solid var(--hairline); background:var(--sunken); color:var(--ink-2); }
+  .draft-note { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 12px; margin:0 0 16px;
+                background:var(--sunken); border-left:3px solid var(--warning); border-radius:0 4px 4px 0; font-size:13px; }
+  .draft-note b { font-weight:600; }
+  .draft-note button { font-size:12px; padding:4px 9px; }
+  .draft-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--warning); margin-left:7px; vertical-align:middle; }
   @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
 </head>
@@ -279,6 +284,11 @@
     </div>
   </header>
   <div class="scroll" id="drawer-scroll">
+    <div class="draft-note" id="draft-note" hidden>
+      <span id="draft-text"></span>
+      <span class="grow"></span>
+      <button type="button" id="draft-discard">Discard the draft</button>
+    </div>
     <div class="note-body" id="view"></div>
     <form class="form" id="editor" hidden>
       <div class="field" id="year-field" hidden>
@@ -322,6 +332,38 @@ const TONE = {
   "Rejected": "var(--critical)", "Not eligible": "var(--serious)",
   "Skipped": "var(--baseline)", "Unknown": "var(--ink-muted)"
 };
+const DRAFT_PREFIX = "jobs-portal-draft:";
+const NEW_KEY = "__new__";
+
+const draftKey = path => DRAFT_PREFIX + path;
+function readDraft(path) {
+  try { return JSON.parse(localStorage.getItem(draftKey(path)) || "null"); } catch (_) { return null; }
+}
+function writeDraft(path, draft) {
+  try { localStorage.setItem(draftKey(path), JSON.stringify(draft)); }
+  catch (_) { /* private mode or quota: drafts are a convenience, never a requirement */ }
+}
+function dropDraft(path) {
+  try { localStorage.removeItem(draftKey(path)); } catch (_) {}
+}
+function draftPaths() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(DRAFT_PREFIX)) out.push(key.slice(DRAFT_PREFIX.length));
+    }
+  } catch (_) {}
+  return out;
+}
+const since = ts => {
+  const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (seconds < 60) return "moments ago";
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} h ago`;
+  return new Date(ts).toLocaleString();
+};
+
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
@@ -447,6 +489,7 @@ function statusSelect(row) {
 }
 
 function renderLedger() {
+  const drafts = new Set(draftPaths());
   let rows = DATA.filter(r => {
     if (state.status && r.status !== state.status) return false;
     if (state.year && r.year !== state.year) return false;
@@ -471,7 +514,7 @@ function renderLedger() {
     const showRel = r.daysToDeadline !== null && r.status === "Not applied";
     const relCls = r.daysToDeadline < 0 ? "flag" : r.daysToDeadline <= 3 ? "flag warn" : "";
     return `<tr data-path="${esc(r.path)}" class="${current && current.path === r.path ? "active" : ""}">
-      <td><div class="co">${esc(r.company)}</div><div class="ti">${esc(r.title)}</div></td>
+      <td><div class="co">${esc(r.company)}${drafts.has(r.path) ? '<span class="draft-dot" title="unsaved draft in this browser"></span>' : ""}</div><div class="ti">${esc(r.title)}</div></td>
       <td class="loc">${esc(r.location)}</td>
       <td>${statusSelect(r)}</td>
       <td class="num">${r.applied || "&ndash;"}</td>
@@ -527,13 +570,52 @@ function fieldInput(key, value) {
     <input id="${id}" type="${type}" data-field="${key}" value="${esc(value ?? "")}"></div>`;
 }
 
+function formState() {
+  const frontmatter = {};
+  $("editor-fields").querySelectorAll("[data-field]").forEach(el => { frontmatter[el.dataset.field] = el.value; });
+  const state = { frontmatter, body: $("body").value, at: Date.now() };
+  if (mode === "new") state.year = $("year").value;
+  return state;
+}
+
+function stashDraft() {
+  const key = mode === "new" ? NEW_KEY : (current && current.path);
+  if (!key) return;
+  const state = formState();
+  state.baseMtime = current ? current.mtime : null;
+  writeDraft(key, state);
+  $("save-state").textContent = "draft kept in this browser";
+  renderLedger();
+}
+
 function markDirty() {
   dirty = true;
   $("save-state").textContent = "unsaved changes";
+  clearTimeout(markDirty._t);
+  markDirty._t = setTimeout(stashDraft, 400);
+}
+
+function applyDraft(draft) {
+  if (!draft) return false;
+  Object.entries(draft.frontmatter || {}).forEach(([key, value]) => {
+    const el = $("f-" + key);
+    if (el) el.value = value;
+  });
+  if (typeof draft.body === "string") $("body").value = draft.body;
+  if (draft.year && $("year").options.length) $("year").value = draft.year;
+  return true;
+}
+
+function showDraftBanner(draft, stale) {
+  $("draft-note").hidden = !draft;
+  if (!draft) return;
+  $("draft-text").innerHTML = stale
+    ? `<b>Draft restored</b> from ${esc(since(draft.at))}, but the file has changed on disk since. Saving will overwrite it.`
+    : `<b>Draft restored</b> from ${esc(since(draft.at))}, kept in this browser and not yet written to the file.`;
 }
 
 async function openNote(path) {
-  if (dirty && !confirm("This note has unsaved changes. Discard them?")) return;
+  if (dirty) stashDraft();
   try {
     current = await api("/api/note?path=" + encodeURIComponent(path));
   } catch (err) {
@@ -556,8 +638,17 @@ async function openNote(path) {
   const keys = [...new Set([...CONFIG.fields, ...Object.keys(front)])];
   $("editor-fields").innerHTML = keys.map(k => fieldInput(k, front[k])).join("");
   $("body").value = current.body || "";
+
+  const draft = readDraft(current.path);
+  if (draft) {
+    applyDraft(draft);
+    dirty = true;
+    showDraftBanner(draft, draft.baseMtime && Math.abs(draft.baseMtime - current.mtime) > 0.001);
+  } else {
+    showDraftBanner(null);
+  }
   setMode("note");
-  setEditing(false);
+  setEditing(!!draft);
   const hash = "#" + encodeURIComponent(current.path);
   if (location.hash !== hash) history.replaceState(null, "", hash);
   openPanel();
@@ -573,7 +664,7 @@ function openPanel() {
 }
 
 function closeDrawer() {
-  if (dirty && !confirm("This note has unsaved changes. Discard them?")) return;
+  if (dirty) stashDraft();          // keep the work rather than asking to throw it away
   dirty = false;
   current = null;
   if (location.hash) history.replaceState(null, "", location.pathname);
@@ -595,6 +686,8 @@ async function saveNote() {
       body: JSON.stringify({ path: current.path, frontmatter, body: $("body").value, mtime: current.mtime })
     });
     dirty = false;
+    dropDraft(current.path);
+    showDraftBanner(null);
     current.mtime = result.mtime;
     const index = DATA.findIndex(r => r.path === result.row.path);
     if (index >= 0) DATA[index] = result.row; else DATA.push(result.row);
@@ -629,7 +722,7 @@ async function quickStatus(path, value) {
 }
 
 function openNewForm() {
-  if (dirty && !confirm("There are unsaved changes. Discard them?")) return;
+  if (dirty) stashDraft();
   current = null;
   dirty = false;
   const thisYear = String(new Date().getFullYear());
@@ -641,6 +734,9 @@ function openNewForm() {
   $("editor-fields").innerHTML = CONFIG.fields
     .map(k => fieldInput(k, k === "job_status" ? "Not applied" : "")).join("");
   $("body").value = "## Description\n\n";
+  const draft = readDraft(NEW_KEY);
+  if (draft) { applyDraft(draft); dirty = true; }
+  showDraftBanner(draft, false);
   setMode("new");
   openPanel();
   const first = $("f-company") || $("f-job_title");
@@ -663,6 +759,8 @@ async function submitNewNote() {
       body: JSON.stringify({ frontmatter, body: $("body").value, year: $("year").value })
     });
     dirty = false;
+    dropDraft(NEW_KEY);
+    showDraftBanner(null);
     await load();
     toast("Created " + result.created);
     openNote(result.created);
@@ -735,10 +833,18 @@ $("scrim").addEventListener("click", closeDrawer);
 $("read-tab").addEventListener("click", () => setEditing(false));
 $("edit-tab").addEventListener("click", () => setEditing(true));
 $("save-btn").addEventListener("click", () => mode === "new" ? submitNewNote() : saveNote());
-$("revert-btn").addEventListener("click", () => {
+function discardDraft() {
+  const key = mode === "new" ? NEW_KEY : (current && current.path);
+  if (!key) return;
+  dropDraft(key);
+  dirty = false;
+  showDraftBanner(null);
+  renderLedger();
   if (mode === "new") { openNewForm(); return; }
   if (current) openNote(current.path);
-});
+}
+$("revert-btn").addEventListener("click", discardDraft);
+$("draft-discard").addEventListener("click", discardDraft);
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && $("drawer").classList.contains("on")) closeDrawer();
   if ((e.metaKey || e.ctrlKey) && e.key === "s" && editing) {
@@ -746,7 +852,7 @@ document.addEventListener("keydown", e => {
     mode === "new" ? submitNewNote() : saveNote();
   }
 });
-window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", () => { if (dirty) stashDraft(); });
 
 $("src-dir").textContent = CONFIG.jobsDir;
 if (CONFIG.readOnly) { $("mode-badge").classList.remove("sr"); $("new-btn").disabled = true; }
