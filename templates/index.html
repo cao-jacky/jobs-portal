@@ -281,6 +281,10 @@
   <div class="scroll" id="drawer-scroll">
     <div class="note-body" id="view"></div>
     <form class="form" id="editor" hidden>
+      <div class="field" id="year-field" hidden>
+        <label for="year">Year folder</label>
+        <select id="year"></select>
+      </div>
       <div class="fields" id="editor-fields"></div>
       <div class="field wide">
         <label for="body">Note body (markdown)</label>
@@ -306,6 +310,7 @@ let DATA = [];
 let current = null;          // { path, frontmatter, order, body, html, mtime }
 let dirty = false;
 let editing = false;
+let mode = "note";           // "note" while viewing or editing a file, "new" while creating one
 
 const SENT = new Set(["Applied", "Rejected", "Interviewed", "Interview Invitation", "Not eligible"]);
 const WON = new Set(["Interviewed", "Interview Invitation"]);
@@ -491,6 +496,24 @@ function setEditing(on) {
   $("save-state").textContent = on && CONFIG.readOnly ? "read-only mode, saving is disabled" : "";
 }
 
+function setMode(next) {
+  mode = next;
+  const creating = next === "new";
+  $("year-field").hidden = !creating;
+  $("read-tab").hidden = creating;
+  $("edit-tab").hidden = creating;
+  $("open-ad").hidden = creating || !(current && current.frontmatter && current.frontmatter.link);
+  $("save-btn").textContent = creating ? "Create note" : "Save note";
+  $("revert-btn").textContent = creating ? "Clear the form" : "Discard changes";
+  if (creating) {
+    $("view").hidden = true;
+    $("editor").hidden = false;
+    $("save-btn").hidden = CONFIG.readOnly;
+    $("revert-btn").hidden = false;
+    editing = true;
+  }
+}
+
 function fieldInput(key, value) {
   const id = "f-" + key;
   if (key === "job_status") {
@@ -533,15 +556,20 @@ async function openNote(path) {
   const keys = [...new Set([...CONFIG.fields, ...Object.keys(front)])];
   $("editor-fields").innerHTML = keys.map(k => fieldInput(k, front[k])).join("");
   $("body").value = current.body || "";
+  setMode("note");
   setEditing(false);
   const hash = "#" + encodeURIComponent(current.path);
   if (location.hash !== hash) history.replaceState(null, "", hash);
+  openPanel();
+  $("close-btn").focus();
+  renderLedger();
+}
+
+function openPanel() {
   $("scrim").classList.add("on");
   $("drawer").classList.add("on");
   $("drawer").setAttribute("aria-hidden", "false");
   $("drawer-scroll").scrollTop = 0;
-  $("close-btn").focus();
-  renderLedger();
 }
 
 function closeDrawer() {
@@ -600,22 +628,49 @@ async function quickStatus(path, value) {
   }
 }
 
-async function createNote() {
-  const company = prompt("Company name:");
-  if (!company) return;
-  const title = prompt("Job title:");
-  if (!title) return;
+function openNewForm() {
+  if (dirty && !confirm("There are unsaved changes. Discard them?")) return;
+  current = null;
+  dirty = false;
+  const thisYear = String(new Date().getFullYear());
+  const years = [...new Set([...DATA.map(r => r.year), thisYear])].filter(y => /^\d{4}$/.test(y)).sort().reverse();
+  $("year").innerHTML = years.map(y => `<option value="${y}"${y === thisYear ? " selected" : ""}>${y}</option>`).join("");
+  $("drawer-title").textContent = "New position";
+  $("drawer-role").textContent = "The file is named from the company and job title.";
+  $("drawer-meta").innerHTML = "";
+  $("editor-fields").innerHTML = CONFIG.fields
+    .map(k => fieldInput(k, k === "job_status" ? "Not applied" : "")).join("");
+  $("body").value = "## Description\n\n";
+  setMode("new");
+  openPanel();
+  const first = $("f-company") || $("f-job_title");
+  if (first) first.focus();
+}
+
+async function submitNewNote() {
+  const frontmatter = {};
+  $("editor-fields").querySelectorAll("[data-field]").forEach(el => { frontmatter[el.dataset.field] = el.value.trim(); });
+  if (!frontmatter.company || !frontmatter.job_title) {
+    $("save-state").textContent = "company and job title are both needed";
+    ($("f-company").value ? $("f-job_title") : $("f-company")).focus();
+    return;
+  }
+  $("save-btn").disabled = true;
+  $("save-state").textContent = "creating…";
   try {
     const result = await api("/api/notes", {
       method: "POST",
-      body: JSON.stringify({ frontmatter: { company, job_title: title, job_status: "Not applied" },
-                             body: "## Description\n\nPaste the advert here.\n" })
+      body: JSON.stringify({ frontmatter, body: $("body").value, year: $("year").value })
     });
-    toast("Created " + result.created);
+    dirty = false;
     await load();
+    toast("Created " + result.created);
     openNote(result.created);
   } catch (err) {
+    $("save-state").textContent = "not created";
     toast(err.message, true);
+  } finally {
+    $("save-btn").disabled = false;
   }
 }
 
@@ -668,18 +723,28 @@ document.querySelectorAll("th.sortable").forEach(th => {
   th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } });
 });
 
+$("editor").addEventListener("submit", e => {
+  e.preventDefault();
+  mode === "new" ? submitNewNote() : saveNote();
+});
 $("q").addEventListener("input", e => { state.q = e.target.value.toLowerCase().trim(); renderLedger(); });
 $("refresh-btn").addEventListener("click", () => load().then(() => toast("Reloaded from disk.")));
-$("new-btn").addEventListener("click", createNote);
+$("new-btn").addEventListener("click", openNewForm);
 $("close-btn").addEventListener("click", closeDrawer);
 $("scrim").addEventListener("click", closeDrawer);
 $("read-tab").addEventListener("click", () => setEditing(false));
 $("edit-tab").addEventListener("click", () => setEditing(true));
-$("save-btn").addEventListener("click", saveNote);
-$("revert-btn").addEventListener("click", () => { if (current) openNote(current.path); });
+$("save-btn").addEventListener("click", () => mode === "new" ? submitNewNote() : saveNote());
+$("revert-btn").addEventListener("click", () => {
+  if (mode === "new") { openNewForm(); return; }
+  if (current) openNote(current.path);
+});
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && $("drawer").classList.contains("on")) closeDrawer();
-  if ((e.metaKey || e.ctrlKey) && e.key === "s" && editing) { e.preventDefault(); saveNote(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === "s" && editing) {
+    e.preventDefault();
+    mode === "new" ? submitNewNote() : saveNote();
+  }
 });
 window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 

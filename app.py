@@ -624,7 +624,10 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         ordered = {key: clean(str(front.get(key) or "")) for key in FIELD_ORDER}
-        ordered.setdefault("job_status", "Not applied")
+        for key, value in front.items():          # keep any extra keys the client sent
+            key = str(key).strip().lower()
+            if key and key not in ordered:
+                ordered[key] = clean(str(value or ""))
         if not ordered.get("job_status"):
             ordered["job_status"] = "Not applied"
         body = payload.get("body") or "## Description\n"
