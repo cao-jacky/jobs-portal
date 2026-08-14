@@ -52,3 +52,18 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # A second, larger image with LibreOffice in it, for rendering letters to
+      # PDF. amd64 only: installing LibreOffice under arm64 emulation on a hosted
+      # runner is slow enough to be impractical.
+      - name: Build and push the pdf variant
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          build-args: WITH_PDF=1
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:pdf
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=pdf
+          cache-to: type=gha,mode=max,scope=pdf

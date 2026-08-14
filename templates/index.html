@@ -270,6 +270,14 @@
   .map-side { display:flex; flex-direction:column; gap:9px; }
   .map-side .row { display:flex; justify-content:space-between; gap:10px; font-size:12.5px; color:var(--ink-2); }
   .map-side .row b { font-family:var(--mono); font-weight:500; color:var(--ink); }
+  .checks { display:flex; flex-wrap:wrap; gap:6px 14px; align-items:center; font-family:var(--mono);
+            font-size:11px; color:var(--ink-2); padding:8px 11px; background:var(--sunken);
+            border-radius:4px; margin-bottom:14px; }
+  .checks b { font-weight:500; color:var(--ink); }
+  .checks .ok { color:var(--good-ink); }
+  .checks .bad { color:var(--critical); }
+  .letter-hint { font-size:12.5px; color:var(--ink-muted); margin:0 0 10px; }
+  #letter-body { min-height:420px; }
   .form { display:flex; flex-direction:column; gap:14px; }
   .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
   .field { display:flex; flex-direction:column; gap:5px; }
@@ -436,6 +444,7 @@
     <div class="actions">
       <button id="read-tab" class="primary">Read</button>
       <button id="edit-tab">Edit</button>
+      <button id="letter-tab">Letter</button>
       <span class="grow"></span>
       <a id="open-ad" href="#" target="_blank" rel="noopener" hidden>Open the advert</a>
     </div>
@@ -447,6 +456,12 @@
       <button type="button" id="draft-discard">Discard the draft</button>
     </div>
     <div class="note-body" id="view"></div>
+    <div id="letter-view" hidden>
+      <div class="checks" id="letter-checks"></div>
+      <p class="letter-hint">One paragraph per block, separated by a blank line. Page size, margins
+        and fonts come from the document itself and are never rewritten.</p>
+      <textarea id="letter-body" rows="24" spellcheck="true"></textarea>
+    </div>
     <form class="form" id="editor" hidden>
       <div class="field" id="year-field" hidden>
         <label for="year">Year folder</label>
@@ -462,6 +477,8 @@
   <footer>
     <span class="readout" id="save-state"></span>
     <span class="grow"></span>
+    <a id="pdf-link" class="doc" href="#" target="_blank" rel="noopener" hidden>open the PDF</a>
+    <button id="pdf-btn" class="ghost" hidden>Render PDF</button>
     <button id="revert-btn" class="ghost" hidden>Discard changes</button>
     <button id="save-btn" class="primary" hidden>Save note</button>
   </footer>
@@ -952,6 +969,113 @@ function celebrate() {
   requestAnimationFrame(frame);
 }
 
+/* ---------------- cover letters ---------------- */
+
+let currentLetter = null;
+
+function letterOf(row) {
+  return ((row && row.docs) || []).find(d => d.kind === "letter" && d.ext === "odt") || null;
+}
+
+function renderChecks(checks) {
+  if (!checks) { $("letter-checks").innerHTML = ""; return; }
+  const flag = (label, value, ok) => `<span>${label} <b class="${ok ? "ok" : "bad"}">${value}</b></span>`;
+  $("letter-checks").innerHTML = [
+    flag("words", checks.words, checks.wordsOk),
+    `<span>paragraphs <b>${checks.paragraphs}</b></span>`,
+    flag("colons", checks.colons, checks.colons <= 1),
+    flag("em dashes", checks.emDashes, checks.emDashes === 0),
+    checks.banned.length ? `<span class="bad">banned: ${checks.banned.map(esc).join(", ")}</span>`
+                         : `<span class="ok">no banned phrasing</span>`,
+  ].join("");
+}
+
+async function openLetter() {
+  if (!current) return;
+  const doc = letterOf(DATA.find(r => r.path === current.path));
+  if (!doc) {
+    if (CONFIG.readOnly) { toast("No letter exists for this position.", true); return; }
+    if (!confirm("No letter exists for this position yet. Create one from the newest letter's formatting?")) return;
+    try {
+      const made = await api("/api/letter", { method: "POST", body: JSON.stringify({ notePath: current.path }) });
+      toast(`Created ${made.created} using the formatting of ${made.template}.`);
+      await load();
+      currentLetter = made;
+      currentLetter.path = made.created;
+    } catch (err) { toast(err.message, true); return; }
+  } else {
+    try {
+      currentLetter = await api("/api/letter?path=" + encodeURIComponent(doc.path));
+    } catch (err) { toast(err.message, true); return; }
+  }
+  $("letter-body").value = currentLetter.blocks.map(b => b.text).join("\n\n");
+  renderChecks(currentLetter.checks);
+  setMode("letter");
+  const link = $("pdf-link");
+  if (currentLetter.pdf) { link.href = "/api/file?path=" + encodeURIComponent(currentLetter.pdf); link.hidden = false; }
+  $("save-state").textContent = "";
+}
+
+function letterBlocks() {
+  return $("letter-body").value.split(/\n\s*\n/).map(t => t.trim()).filter(Boolean)
+    .map((text, index) => ({ text, style: ((currentLetter.blocks[index] || {}).style) || "" }));
+}
+
+async function saveLetter() {
+  if (!currentLetter || CONFIG.readOnly) return;
+  $("save-btn").disabled = true;
+  $("save-state").textContent = "saving…";
+  try {
+    const result = await api("/api/letter", {
+      method: "PUT",
+      body: JSON.stringify({ path: currentLetter.path, blocks: letterBlocks(), mtime: currentLetter.mtime })
+    });
+    currentLetter.mtime = result.mtime;
+    currentLetter.blocks = letterBlocks();
+    renderChecks(result.checks);
+    dirty = false;
+    $("save-state").textContent = "saved";
+    toast(result.backup ? "Letter saved. Previous version kept in .portal-backups" : "Letter saved.");
+  } catch (err) {
+    $("save-state").textContent = "not saved";
+    toast(err.message, true);
+  } finally {
+    $("save-btn").disabled = false;
+  }
+}
+
+async function renderLetterPdf() {
+  if (!currentLetter) return;
+  if (!CONFIG.canRenderPdf) {
+    toast("This container has no LibreOffice, so PDFs cannot be rendered. Use the pdf image tag.", true);
+    return;
+  }
+  $("pdf-btn").disabled = true;
+  $("save-state").textContent = "rendering…";
+  try {
+    const result = await api("/api/letter/pdf", { method: "POST", body: JSON.stringify({ path: currentLetter.path }) });
+    currentLetter.pdf = result.pdf;
+    const link = $("pdf-link");
+    link.href = "/api/file?path=" + encodeURIComponent(result.pdf) + "&t=" + Date.now();
+    link.hidden = false;
+    $("save-state").textContent = `${result.pages} page${result.pages === 1 ? "" : "s"}`;
+    toast(result.pages === 1 ? "Rendered a one page PDF." : `Rendered ${result.pages} pages, which is one too many.`,
+          result.pages !== 1);
+    await load();
+  } catch (err) {
+    $("save-state").textContent = "not rendered";
+    toast(err.message, true);
+  } finally {
+    $("pdf-btn").disabled = false;
+  }
+}
+
+$("letter-tab").addEventListener("click", openLetter);
+$("pdf-btn").addEventListener("click", renderLetterPdf);
+document.addEventListener("input", e => {
+  if (e.target.id === "letter-body") { dirty = true; $("save-state").textContent = "unsaved changes"; }
+});
+
 /* ---------------- hover tooltip ---------------- */
 
 const tip = () => $("tip");
@@ -1064,6 +1188,11 @@ function renderLedger() {
 
 function setEditing(on) {
   editing = on;
+  if (mode === "letter") mode = "note";
+  $("letter-view").hidden = true;
+  $("pdf-btn").hidden = true;
+  $("pdf-link").hidden = true;
+  $("letter-tab").classList.remove("primary");
   $("view").hidden = on;
   $("editor").hidden = !on;
   $("save-btn").hidden = !on || CONFIG.readOnly;
@@ -1076,12 +1205,31 @@ function setEditing(on) {
 function setMode(next) {
   mode = next;
   const creating = next === "new";
+  const letter = next === "letter";
   $("year-field").hidden = !creating;
   $("read-tab").hidden = creating;
   $("edit-tab").hidden = creating;
+  $("letter-tab").hidden = creating;
+  $("letter-tab").classList.toggle("primary", letter);
+  $("letter-view").hidden = !letter;
+  $("pdf-btn").hidden = !letter;
+  $("pdf-link").hidden = !letter || !(currentLetter && currentLetter.pdf);
+  if (letter) {
+    $("view").hidden = true;
+    $("editor").hidden = true;
+    $("save-btn").hidden = CONFIG.readOnly;
+    $("save-btn").textContent = "Save letter";
+    $("revert-btn").hidden = false;
+    $("revert-btn").textContent = "Reload from disk";
+    $("read-tab").classList.remove("primary");
+    $("edit-tab").classList.remove("primary");
+    editing = false;
+  }
   $("open-ad").hidden = creating || !(current && current.frontmatter && current.frontmatter.link);
-  $("save-btn").textContent = creating ? "Create note" : "Save note";
-  $("revert-btn").textContent = creating ? "Clear the form" : "Discard changes";
+  if (!letter) {
+    $("save-btn").textContent = creating ? "Create note" : "Save note";
+    $("revert-btn").textContent = creating ? "Clear the form" : "Discard changes";
+  }
   if (creating) {
     $("view").hidden = true;
     $("editor").hidden = false;
@@ -1403,7 +1551,8 @@ $("close-btn").addEventListener("click", closeDrawer);
 $("scrim").addEventListener("click", closeDrawer);
 $("read-tab").addEventListener("click", () => setEditing(false));
 $("edit-tab").addEventListener("click", () => setEditing(true));
-$("save-btn").addEventListener("click", () => mode === "new" ? submitNewNote() : saveNote());
+$("save-btn").addEventListener("click", () =>
+  mode === "new" ? submitNewNote() : mode === "letter" ? saveLetter() : saveNote());
 function discardDraft() {
   const key = mode === "new" ? NEW_KEY : (current && current.path);
   if (!key) return;
@@ -1414,13 +1563,13 @@ function discardDraft() {
   if (mode === "new") { openNewForm(); return; }
   if (current) openNote(current.path);
 }
-$("revert-btn").addEventListener("click", discardDraft);
+$("revert-btn").addEventListener("click", () => mode === "letter" ? openLetter() : discardDraft());
 $("draft-discard").addEventListener("click", discardDraft);
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && $("drawer").classList.contains("on")) closeDrawer();
-  if ((e.metaKey || e.ctrlKey) && e.key === "s" && editing) {
+  if ((e.metaKey || e.ctrlKey) && e.key === "s" && (editing || mode === "letter")) {
     e.preventDefault();
-    mode === "new" ? submitNewNote() : saveNote();
+    mode === "new" ? submitNewNote() : mode === "letter" ? saveLetter() : saveNote();
   }
 });
 window.addEventListener("beforeunload", () => { if (dirty) stashDraft(); });

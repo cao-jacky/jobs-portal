@@ -138,6 +138,44 @@ built-in subset renderer is used.
 
 Light and dark themes both ship, following the viewer's system preference.
 
+### Cover letters
+
+If a folder of letters sits beside `Positions/`, the note panel gains a **Letter**
+tab that edits the matching `.odt` in place:
+
+- Paragraphs are edited as plain text, one block per paragraph separated by a
+  blank line. Page size, margins, fonts and the style definitions all live outside
+  the document body and are never rewritten, so a letter keeps the formatting of
+  the document it was built from.
+- A checks strip reports word count, paragraph count, colons, em dashes and a list
+  of banned phrases, updating on every save.
+- **Render PDF** converts the letter next to itself and reports the page count,
+  which is the constraint that usually matters.
+- If no letter exists for a position, one can be created, inheriting its styles
+  from the most recently modified existing letter. Set `LETTER_TEMPLATE` to pin a
+  specific document instead.
+
+Saving a letter takes the same care as saving a note: atomic replace, a timestamped
+copy into `.portal-backups/`, and a `409` if the file changed on disk since it was
+opened.
+
+**PDF rendering needs LibreOffice, which is not in the default image.** Use the
+`:pdf` tag for a build that includes it:
+
+```
+image: ghcr.io/cao-jacky/jobs-portal:pdf
+```
+
+That image is about 790MB against 200MB, and amd64 only. Without it, letters can
+still be read and edited; only the Render PDF button is unavailable, and the portal
+reports which mode it is in at startup and on `/healthz`.
+
+One caveat on fidelity: Times cannot be redistributed, so the image ships
+Liberation Serif, which LibreOffice substitutes for Times. It is metrically
+compatible, so line breaks, spacing and the page count come out the same, but the
+glyph shapes differ slightly from a PDF rendered on a machine that has real Times.
+Render on such a machine if an exact match to earlier PDFs matters.
+
 ### Insights
 
 A second view, reachable from the tab beside the ledger:

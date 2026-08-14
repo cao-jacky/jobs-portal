@@ -3,6 +3,8 @@ services:
     # Published by .github/workflows/publish.yml. Deliberately no `build:` here,
     # so this file works in Portainer and anywhere else without a build context.
     # To build locally instead, add docker-compose.build.yml (see the README).
+    # Swap :latest for :pdf to get the larger image that can render letters to
+    # PDF with LibreOffice. Everything else works identically on both.
     image: ghcr.io/cao-jacky/jobs-portal:latest
     container_name: jobs-portal
     restart: unless-stopped

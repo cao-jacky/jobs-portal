@@ -9,7 +9,17 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=8080 \
     HOST=0.0.0.0
 
+# Set to 1 to bake LibreOffice in so the portal can render letters to PDF.
+# It adds roughly 700MB, which is why the default image leaves it out.
+ARG WITH_PDF=0
+
 WORKDIR /app
+
+RUN if [ "$WITH_PDF" = "1" ]; then \
+      apt-get update && \
+      apt-get install -y --no-install-recommends libreoffice-writer fonts-liberation && \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 
 # Only dependency is the markdown renderer; without it the app falls back to a
 # built-in subset renderer, so the image still works if this layer is stripped.

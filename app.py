@@ -23,8 +23,12 @@ import html as html_mod
 import json
 import os
 import re
+import io
 import shutil
+import subprocess
 import sys
+import tempfile
+import zipfile
 import unicodedata
 import urllib.parse
 from http import HTTPStatus
@@ -742,6 +746,156 @@ def term_stats(rows: list[dict], limit: int = 70) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
+# cover letters: reading, writing, and rendering .odt documents
+# --------------------------------------------------------------------------- #
+
+SOFFICE_CANDIDATES = [
+    os.environ.get("SOFFICE_BIN", ""),
+    "/usr/bin/soffice",
+    "/usr/lib/libreoffice/program/soffice",
+    "/opt/libreoffice/program/soffice",
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+]
+# The attribute group must be lazy: a greedy one consumes the slash of a
+# self-closing <text:p .../> and then swallows the paragraph after it.
+TEXT_P_RE = re.compile(rb"<text:p\b([^>]*?)(?:/>|>(.*?)</text:p>)", re.S)
+BODY_RE = re.compile(rb"(<office:text[^>]*>)(.*)(</office:text>)", re.S)
+STYLE_ATTR_RE = re.compile(rb'text:style-name="([^"]*)"')
+TAG_RE = re.compile(rb"<[^>]+>")
+
+
+def soffice_path() -> str | None:
+    for candidate in SOFFICE_CANDIDATES:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return shutil.which("soffice") or shutil.which("libreoffice")
+
+
+SOFFICE = soffice_path()
+
+
+def odt_paragraphs(data: bytes) -> tuple[list[dict], bytes]:
+    """Pull the paragraphs out of an .odt, with the raw content.xml alongside."""
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        content = archive.read("content.xml")
+    body = BODY_RE.search(content)
+    if not body:
+        return [], content
+    paragraphs = []
+    for match in TEXT_P_RE.finditer(body.group(2)):
+        attrs, inner = match.group(1), match.group(2) or b""
+        style = STYLE_ATTR_RE.search(attrs)
+        text = html_mod.unescape(TAG_RE.sub(b"", inner).decode("utf-8", "replace"))
+        paragraphs.append({"style": (style.group(1).decode() if style else ""), "text": text})
+    return paragraphs, content
+
+
+def odt_blocks(paragraphs: list[dict]) -> list[dict]:
+    """Collapse the empty spacer paragraphs that separate real ones."""
+    return [p for p in paragraphs if p["text"].strip()]
+
+
+def rebuild_odt(data: bytes, blocks: list[str], styles: list[str]) -> bytes:
+    """Rewrite the paragraph text, leaving styles.xml and the style definitions alone.
+
+    Page geometry, fonts and the automatic style definitions all live outside the
+    body, so replacing only the body keeps a letter's formatting identical to the
+    document it was built from.
+    """
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        names = archive.namelist()
+        parts = {name: archive.read(name) for name in names}
+
+    content = parts["content.xml"]
+    body = BODY_RE.search(content)
+    if not body:
+        raise ValueError("this .odt has no office:text body to rewrite")
+
+    pieces = []
+    for index, text in enumerate(blocks):
+        style = styles[index] if index < len(styles) else (styles[-1] if styles else "P2")
+        escaped = html_mod.escape(text, quote=False).encode("utf-8")
+        pieces.append(b'<text:p text:style-name="%s">%s</text:p>' % (style.encode(), escaped))
+        if index != len(blocks) - 1:                     # one empty paragraph between blocks
+            pieces.append(b'<text:p text:style-name="%s"/>' % style.encode())
+    new_content = content[:body.start(2)] + b"".join(pieces) + content[body.end(2):]
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as out:
+        if "mimetype" in parts:                          # must stay first and uncompressed
+            out.writestr(zipfile.ZipInfo("mimetype"), parts["mimetype"], compress_type=zipfile.ZIP_STORED)
+        for name in names:
+            if name == "mimetype":
+                continue
+            out.writestr(name, new_content if name == "content.xml" else parts[name])
+    return buffer.getvalue()
+
+
+def render_pdf(odt: Path) -> Path:
+    """Convert an .odt to PDF beside it using LibreOffice."""
+    if not SOFFICE:
+        raise RuntimeError("no LibreOffice available in this container, so PDFs cannot be rendered")
+    with tempfile.TemporaryDirectory() as scratch:
+        # A private profile keeps concurrent conversions from fighting over one lock.
+        result = subprocess.run(
+            [SOFFICE, f"-env:UserInstallation=file://{scratch}/profile", "--headless",
+             "--convert-to", "pdf", "--outdir", str(odt.parent), str(odt)],
+            capture_output=True, text=True, timeout=180,
+        )
+    produced = odt.with_suffix(".pdf")
+    if not produced.exists():
+        raise RuntimeError((result.stderr or result.stdout or "conversion produced no file").strip()[:400])
+    return produced
+
+
+BANNED_PHRASES = ["i.e.", "e.g.", "delve", "leverage", "passionate about",
+                  "i am confident that", "in today's fast-paced"]
+
+
+def letter_checks(blocks: list[dict]) -> dict:
+    """Score a letter against the standing rules in COVER_LETTER_PROMPT.md."""
+    body = " ".join(b["text"] for b in blocks[1:-2]) if len(blocks) > 3 else \
+           " ".join(b["text"] for b in blocks)
+    lower = body.lower()
+    words = len(body.split())
+    return {
+        "words": words,
+        "wordsOk": 360 <= words <= 450,
+        "colons": body.count(":"),
+        "emDashes": body.count("\u2014"),
+        "banned": sorted({phrase for phrase in BANNED_PHRASES if phrase in lower}),
+        "paragraphs": len(blocks),
+    }
+
+
+def letter_dir_for(note_path: str) -> Path:
+    """Where a letter for this note belongs: Cover Letters/<year>/."""
+    for folder, kind in artefact_dirs().items():
+        if kind == "letter":
+            return folder / Path(note_path).parent.name
+    return JOBS_DIR / "Cover Letters" / Path(note_path).parent.name
+
+
+def letter_template() -> Path | None:
+    """The document whose styles a new letter should inherit."""
+    configured = os.environ.get("LETTER_TEMPLATE", "").strip()
+    if configured:
+        candidate = (JOBS_DIR / configured).resolve()
+        if candidate.is_file():
+            return candidate
+    newest = None
+    for folder, kind in artefact_dirs().items():
+        if kind != "letter":
+            continue
+        for path in folder.rglob("*.odt"):
+            if path.name.startswith((".", "~")):
+                continue
+            if newest is None or path.stat().st_mtime > newest.stat().st_mtime:
+                newest = path
+    return newest
+
+
+# --------------------------------------------------------------------------- #
 # HTTP
 # --------------------------------------------------------------------------- #
 
@@ -797,7 +951,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         route = urllib.parse.urlparse(self.path).path
         if route == "/healthz":
-            self._json({"ok": True, "positions": len(list_notes()), "markdown": MARKDOWN_BACKEND})
+            self._json({"ok": True, "positions": len(list_notes()), "markdown": MARKDOWN_BACKEND,
+                        "pdf": SOFFICE or False})
             return
         if not self._authorised():
             self._error(HTTPStatus.UNAUTHORIZED, "a token is required")
@@ -815,6 +970,7 @@ class Handler(BaseHTTPRequestHandler):
                 "authRequired": bool(AUTH_TOKEN),
                 "today": datetime.date.today().isoformat(),
                 "jobsDir": str(JOBS_DIR),
+                "canRenderPdf": bool(SOFFICE),
             }))
             self._send(HTTPStatus.OK, page.encode("utf-8"), "text/html; charset=utf-8")
             return
@@ -841,6 +997,32 @@ class Handler(BaseHTTPRequestHandler):
                 "places": sorted(places.values(), key=lambda p: -p["count"]),
                 "unplaced": [{"label": k, "count": v} for k, v in
                              sorted(unplaced.items(), key=lambda kv: -kv[1])],
+            })
+            return
+        if route == "/api/letter":
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                doc = safe_doc_path(query.get("path", [""])[0])
+            except ValueError as exc:
+                self._error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
+            if doc.suffix.lower() != ".odt":
+                self._error(HTTPStatus.BAD_REQUEST, "only .odt letters can be edited")
+                return
+            try:
+                blocks = odt_blocks(odt_paragraphs(doc.read_bytes())[0])
+            except (KeyError, zipfile.BadZipFile, ValueError) as exc:
+                self._error(HTTPStatus.BAD_REQUEST, f"this file cannot be read as an .odt: {exc}")
+                return
+            pdf = doc.with_suffix(".pdf")
+            self._json({
+                "path": relative(doc),
+                "blocks": blocks,
+                "checks": letter_checks(blocks),
+                "pdf": relative(pdf) if pdf.is_file() else None,
+                "pdfMtime": pdf.stat().st_mtime if pdf.is_file() else None,
+                "mtime": doc.stat().st_mtime,
+                "canRenderPdf": bool(SOFFICE),
             })
             return
         if route == "/api/file":
@@ -893,7 +1075,48 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorised():
             self._error(HTTPStatus.UNAUTHORIZED, "a token is required")
             return
-        if urllib.parse.urlparse(self.path).path != "/api/note":
+        path_only = urllib.parse.urlparse(self.path).path
+        if path_only == "/api/letter":
+            if READ_ONLY:
+                self._error(HTTPStatus.FORBIDDEN, "the portal is running read-only")
+                return
+            try:
+                payload = self._body_json()
+                doc = safe_doc_path(payload.get("path", ""))
+            except ValueError as exc:
+                self._error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
+            if doc.suffix.lower() != ".odt" or not doc.is_file():
+                self._error(HTTPStatus.BAD_REQUEST, "only an existing .odt letter can be saved")
+                return
+            if payload.get("mtime") and abs(float(payload["mtime"]) - doc.stat().st_mtime) > 0.001:
+                self._error(HTTPStatus.CONFLICT,
+                            "the letter changed on disk since it was opened, reload before saving")
+                return
+            blocks = payload.get("blocks")
+            if not isinstance(blocks, list) or not blocks:
+                self._error(HTTPStatus.BAD_REQUEST, "blocks must be a non-empty list")
+                return
+            texts = [str(b.get("text", "")) if isinstance(b, dict) else str(b) for b in blocks]
+            styles = [str(b.get("style", "")) if isinstance(b, dict) else "" for b in blocks]
+            original = odt_blocks(odt_paragraphs(doc.read_bytes())[0])
+            for index, style in enumerate(styles):
+                if not style:
+                    styles[index] = original[index]["style"] if index < len(original) else "P2"
+            try:
+                rebuilt = rebuild_odt(doc.read_bytes(), texts, styles)
+            except (ValueError, zipfile.BadZipFile) as exc:
+                self._error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
+            saved_backup = backup(doc)
+            temp = doc.with_suffix(doc.suffix + ".tmp")
+            temp.write_bytes(rebuilt)
+            os.replace(temp, doc)
+            fresh = odt_blocks(odt_paragraphs(doc.read_bytes())[0])
+            self._json({"saved": relative(doc), "backup": saved_backup,
+                        "checks": letter_checks(fresh), "mtime": doc.stat().st_mtime})
+            return
+        if path_only != "/api/note":
             self._error(HTTPStatus.NOT_FOUND, "no such route")
             return
         if READ_ONLY:
@@ -978,7 +1201,70 @@ class Handler(BaseHTTPRequestHandler):
         if not self._authorised():
             self._error(HTTPStatus.UNAUTHORIZED, "a token is required")
             return
-        if urllib.parse.urlparse(self.path).path != "/api/notes":
+        path_only = urllib.parse.urlparse(self.path).path
+        if path_only == "/api/letter/pdf":
+            if READ_ONLY:
+                self._error(HTTPStatus.FORBIDDEN, "the portal is running read-only")
+                return
+            try:
+                payload = self._body_json()
+                doc = safe_doc_path(payload.get("path", ""))
+            except ValueError as exc:
+                self._error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
+            if doc.suffix.lower() != ".odt" or not doc.is_file():
+                self._error(HTTPStatus.BAD_REQUEST, "only an existing .odt can be rendered")
+                return
+            try:
+                pdf = render_pdf(doc)
+            except (RuntimeError, subprocess.TimeoutExpired) as exc:
+                self._error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
+                return
+            pages = len(re.findall(rb"/Type\s*/Page[^s]", pdf.read_bytes()))
+            self._json({"pdf": relative(pdf), "pages": pages, "mtime": pdf.stat().st_mtime})
+            return
+        if path_only == "/api/letter":
+            if READ_ONLY:
+                self._error(HTTPStatus.FORBIDDEN, "the portal is running read-only")
+                return
+            try:
+                payload = self._body_json()
+                note = safe_path(payload.get("notePath", ""))
+            except ValueError as exc:
+                self._error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
+            template = letter_template()
+            if template is None:
+                self._error(HTTPStatus.BAD_REQUEST,
+                            "no existing .odt letter to inherit styles from, so there is no template")
+                return
+            target = letter_dir_for(relative(note)) / f"{note.stem}.odt"
+            if target.exists():
+                self._error(HTTPStatus.CONFLICT, f"{relative(target)} already exists")
+                return
+            front, _order, _body = split_note(note.read_text(encoding="utf-8", errors="replace"))
+            company = front.get("company") or "the team"
+            title = front.get("job_title") or "the role"
+            starter = [
+                "Dear Hiring Team,",
+                f"I am writing to express my interest and suitability for the position of {title} at {company}.",
+                "",
+                "Yours sincerely,",
+                "Jacky Cao",
+            ]
+            source = odt_blocks(odt_paragraphs(template.read_bytes())[0])
+            styles = [b["style"] for b in source]
+            if len(styles) < len(starter):
+                styles += [styles[-1] if styles else "P2"] * (len(starter) - len(styles))
+            styles = [styles[0], "P2", "P2", styles[-2] if len(styles) > 1 else "P1", styles[-1]]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(rebuild_odt(template.read_bytes(), starter, styles))
+            blocks = odt_blocks(odt_paragraphs(target.read_bytes())[0])
+            self._json({"created": relative(target), "blocks": blocks,
+                        "checks": letter_checks(blocks), "mtime": target.stat().st_mtime,
+                        "template": relative(template)}, HTTPStatus.CREATED)
+            return
+        if path_only != "/api/notes":
             self._error(HTTPStatus.NOT_FOUND, "no such route")
             return
         if READ_ONLY:
@@ -1038,6 +1324,7 @@ def main() -> None:
     print(f"  writes:   {'disabled (READ_ONLY)' if READ_ONLY else 'enabled'}"
           f"{'' if not BACKUPS or READ_ONLY else f', backups in {BACKUP_DIR}'}")
     print(f"  auth:     {'bearer token required' if AUTH_TOKEN else 'open (no token set)'}")
+    print(f"  pdf:      {SOFFICE or 'unavailable, letters can be edited but not rendered'}")
     print(f"  listening on http://{HOST}:{PORT}")
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
