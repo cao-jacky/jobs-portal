@@ -205,6 +205,25 @@
   .item .ready { font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:999px;
                  border:1px solid var(--good); color:var(--good-ink); white-space:nowrap; margin-right:6px; }
 
+  /* insights */
+  .tabs { display:flex; gap:6px; }
+  .tab { font-size:13px; padding:6px 13px; border-radius:5px; border:1px solid var(--hairline);
+         background:var(--surface); color:var(--ink-2); cursor:pointer; }
+  .tab[aria-selected="true"] { background:var(--accent-soft); border-color:var(--accent); color:var(--ink); font-weight:520; }
+  .heat { display:flex; gap:3px; overflow-x:auto; padding-bottom:4px; }
+  .heat-col { display:flex; flex-direction:column; gap:3px; }
+  .heat-cell { width:12px; height:12px; border-radius:2px; background:var(--sunken); }
+  .heat-months { display:flex; gap:3px; margin-top:5px; font-family:var(--mono); font-size:9.5px; color:var(--ink-muted); }
+  .heat-months span { width:15px; flex:none; white-space:nowrap; }
+  .heat-legend { display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10.5px; color:var(--ink-muted); }
+  .heat-legend i { width:12px; height:12px; border-radius:2px; display:inline-block; }
+  .heat-rows { display:flex; flex-direction:column; gap:3px; margin-right:6px;
+               font-family:var(--mono); font-size:9px; color:var(--ink-muted); }
+  .heat-rows span { height:12px; line-height:12px; }
+  .onthisday { display:flex; flex-direction:column; gap:7px; }
+  .otd { display:flex; gap:10px; align-items:baseline; font-size:13.5px; }
+  .otd .yr { font-family:var(--mono); font-size:11.5px; color:var(--ink-muted); min-width:78px; }
+  .otd .what { color:var(--ink-2); }
   .form { display:flex; flex-direction:column; gap:14px; }
   .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
   .field { display:flex; flex-direction:column; gap:5px; }
@@ -236,11 +255,16 @@
     <h1>Jobs Portal</h1>
     <span class="stamp">watching <b id="src-count">…</b> notes in <b id="src-dir"></b></span>
     <span class="grow"></span>
+    <div class="tabs" role="tablist">
+      <button class="tab" id="tab-ledger" role="tab" aria-selected="true">Ledger</button>
+      <button class="tab" id="tab-insights" role="tab" aria-selected="false">Insights</button>
+    </div>
     <span id="mode-badge" class="badge sr">read-only</span>
     <button id="new-btn">New position</button>
     <button id="refresh-btn" class="ghost">Refresh</button>
   </header>
 
+  <div id="view-ledger">
   <section class="kpis" id="kpis" aria-label="Summary figures"></section>
 
   <section class="attention" aria-label="Needs attention">
@@ -297,6 +321,26 @@
       </table>
     </div>
   </section>
+  </div>
+
+  <div id="view-insights" hidden>
+    <section class="panel">
+      <h2>Applications sent, day by day</h2>
+      <div style="display:flex;gap:0;align-items:flex-start">
+        <div class="heat-rows" id="heat-rows"></div>
+        <div style="min-width:0">
+          <div class="heat" id="heat"></div>
+          <div class="heat-months" id="heat-months"></div>
+        </div>
+      </div>
+      <div class="heat-legend" id="heat-legend"></div>
+    </section>
+
+    <section class="panel">
+      <h2>On this day</h2>
+      <div class="onthisday" id="onthisday"></div>
+    </section>
+  </div>
 </div>
 
 <div class="scrim" id="scrim"></div>
@@ -521,6 +565,91 @@ function renderSummary() {
   $("status-chips").innerHTML = present.map(s => chip(`${s} ${counts.get(s)}`, s, "status")).join("");
   $("year-chips").innerHTML = [...new Set(DATA.map(r => r.year))].sort().map(y => chip(y, y, "year")).join("");
 }
+
+/* ---------------- insights ---------------- */
+
+const HEAT_STEPS = ["var(--sunken)", "var(--stage-1)", "var(--stage-2)", "var(--stage-3)", "var(--stage-4)"];
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+let insights = null;
+
+const isoDay = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+function renderHeatmap() {
+  const perDay = new Map();
+  DATA.forEach(r => { if (r.applied) perDay.set(r.applied, (perDay.get(r.applied) || 0) + 1); });
+  const days = [...perDay.keys()].sort();
+  if (!days.length) { $("heat").innerHTML = `<span class="empty">Nothing sent yet.</span>`; return; }
+
+  // start on the Monday of the first week, end on the Sunday of the current week
+  const start = new Date(days[0] + "T00:00:00");
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const end = new Date(CONFIG.today + "T00:00:00");
+  end.setDate(end.getDate() + (6 - ((end.getDay() + 6) % 7)));
+
+  const peak = Math.max(...perDay.values());
+  const columns = [];
+  let cursor = new Date(start);
+  while (cursor <= end) {
+    const cells = [];
+    const weekStart = new Date(cursor);
+    for (let i = 0; i < 7; i++) {
+      const key = isoDay(cursor);
+      const n = perDay.get(key) || 0;
+      const step = n === 0 ? 0 : Math.min(4, 1 + Math.floor((n - 1) / Math.max(1, peak / 4)));
+      const future = key > CONFIG.today;
+      cells.push(`<div class="heat-cell" ${future ? 'style="opacity:.35"' : `style="background:${HEAT_STEPS[step]}"`}
+        tabindex="${n ? 0 : -1}" data-tip="${key} &middot; ${n === 0 ? "nothing sent" : n + (n === 1 ? " application" : " applications")}"></div>`);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    columns.push({ html: `<div class="heat-col">${cells.join("")}</div>`,
+                   month: weekStart.getMonth(), day: weekStart.getDate() });
+  }
+  $("heat").innerHTML = columns.map(c => c.html).join("");
+  $("heat-rows").innerHTML = ["Mon","","Wed","","Fri","",""].map(d => `<span>${d}</span>`).join("");
+  let lastMonth = -1;
+  $("heat-months").innerHTML = columns.map(c => {
+    const label = c.month !== lastMonth && c.day <= 7 ? MONTH_NAMES[c.month] : "";
+    if (label) lastMonth = c.month;
+    return `<span>${label}</span>`;
+  }).join("");
+  $("heat-legend").innerHTML = `<span>quiet</span>${HEAT_STEPS.map(c => `<i style="background:${c}"></i>`).join("")}<span>${peak} in a day</span>`;
+}
+
+function renderOnThisDay() {
+  const today = CONFIG.today.slice(5);
+  const events = [];
+  DATA.forEach(r => {
+    if (r.applied && r.applied.slice(5) === today && r.applied.slice(0, 4) !== CONFIG.today.slice(0, 4))
+      events.push({ year: r.applied.slice(0, 4), verb: "applied to", row: r });
+    if (r.rejected && r.rejected.slice(5) === today && r.rejected.slice(0, 4) !== CONFIG.today.slice(0, 4))
+      events.push({ year: r.rejected.slice(0, 4), verb: "heard no from", row: r });
+  });
+  events.sort((a, b) => b.year.localeCompare(a.year));
+  $("onthisday").innerHTML = events.length
+    ? events.map(e => `<div class="otd"><span class="yr">${e.year}</span>
+        <span class="what">${e.verb} <a href="#${encodeURIComponent(e.row.path)}" data-open="${esc(e.row.path)}">${esc(e.row.company)}</a>
+        for ${esc(e.row.title)}</span></div>`).join("")
+    : `<span class="empty">Nothing has happened on this date in a previous year.</span>`;
+}
+
+async function renderInsights() {
+  renderHeatmap();
+  renderOnThisDay();
+  if (!insights) {
+    try { insights = await api("/api/insights"); } catch (err) { toast(err.message, true); return; }
+  }
+}
+
+function showView(which) {
+  const insightsOn = which === "insights";
+  $("view-ledger").hidden = insightsOn;
+  $("view-insights").hidden = !insightsOn;
+  $("tab-ledger").setAttribute("aria-selected", String(!insightsOn));
+  $("tab-insights").setAttribute("aria-selected", String(insightsOn));
+  if (insightsOn) renderInsights();
+}
+$("tab-ledger").addEventListener("click", () => showView("ledger"));
+$("tab-insights").addEventListener("click", () => showView("insights"));
 
 /* ---------------- hover tooltip ---------------- */
 

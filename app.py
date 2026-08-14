@@ -516,6 +516,129 @@ def slug_filename(company: str, title: str) -> str:
     return f"{name}.md"
 
 
+# Coordinates for locations seen in the notes, plus places likely to turn up.
+# Anything unmatched is reported separately rather than guessed at.
+GEOCODES = {
+    "helsinki": (60.1699, 24.9384),
+    "espoo": (60.2055, 24.6559),
+    "otaniemi": (60.1841, 24.8301),
+    "keilaniemi": (60.1755, 24.8329),
+    "vantaa": (60.2941, 25.0400),
+    "jorvas": (60.1533, 24.5300),
+    "kirkkonummi": (60.1226, 24.4382),
+    "hyvinkää": (60.6306, 24.8592),
+    "tampere": (61.4978, 23.7610),
+    "turku": (60.4518, 22.2666),
+    "oulu": (65.0121, 25.4651),
+    "jyväskylä": (62.2426, 25.7473),
+    "lahti": (60.9827, 25.6612),
+    "vaasa": (63.0951, 21.6165),
+    "stockholm": (59.3293, 18.0686),
+    "gothenburg": (57.7089, 11.9746),
+    "oslo": (59.9139, 10.7522),
+    "copenhagen": (55.6761, 12.5683),
+    "trondheim": (63.4305, 10.3951),
+    "tallinn": (59.4370, 24.7536),
+    "berlin": (52.5200, 13.4050),
+    "hamburg": (53.5511, 9.9937),
+    "munich": (48.1351, 11.5820),
+    "prague": (50.0755, 14.4378),
+    "wroclaw": (51.1079, 17.0385),
+    "london": (51.5072, -0.1276),
+    "durham": (54.7761, -1.5733),
+    "palo alto": (37.4419, -122.1430),
+}
+PLACELESS = {"remote", "hybrid", "anywhere", "eu", "europe", "nordics", "unknown", ""}
+
+STOPWORDS = set("""
+a an the and or but if then than that this these those of in on at to for with without from by as is
+are was were be been being have has had do does did will would shall should can could may might must
+you your yours we our ours us they their them he she it its i me my mine who whom which what when
+where why how all any both each few more most other some such no nor not only own same so too very
+just also about into over under again further once here there while during before after above below
+up down out off between through against because about own s t don now d ll m o re ve y ain aren
+couldn didn doesn hadn hasn haven isn ma mightn mustn needn shan shouldn wasn weren won wouldn
+work working works role roles job jobs position positions team teams company companies experience
+description suitability verdict requirement requirements responsibilities tasks offer offers support
+part parts one two three first second next best better able ensure ensuring based provide providing
+related various different every many much need needs needed want wants may must plus level levels
+environment environments world global international leading market business businesses customer
+customers client clients service services product products project projects process processes
+you'll we're we'll our will new using use used within across including etc within also well good
+strong great join looking apply application applications candidate candidates skills ability
+opportunity opportunities help make like well people person years year time
+""".split())
+
+
+def geocode(location: str | None) -> tuple[float, float] | None:
+    """Best-effort coordinates. Parenthetical qualifiers and separators are ignored."""
+    if not location:
+        return None
+    cleaned = re.sub(r"\(.*?\)", " ", location).strip()
+    for part in re.split(r"[,/;|]| and |&", cleaned):
+        key = fold(part)
+        if key in PLACELESS:
+            continue
+        if key in GEOCODES:
+            return GEOCODES[key]
+        for name, point in GEOCODES.items():          # "Otaniemi, Espoo" style values
+            if name in key:
+                return point
+    return None
+
+
+def term_stats(rows: list[dict], limit: int = 70) -> list[dict]:
+    """Count how many adverts each term appears in, split into two halves of time.
+
+    Document frequency rather than raw count, so one advert repeating a word
+    twenty times cannot dominate, and a term is only reported once it shows up in
+    at least three adverts.
+    """
+    dated = sorted([r for r in rows if r.get("applied")], key=lambda r: r["applied"])
+    midpoint = dated[len(dated) // 2]["applied"] if dated else None
+    totals: dict[str, int] = {}
+    early: dict[str, int] = {}
+    late: dict[str, int] = {}
+    for row in rows:
+        path = JOBS_DIR / row["path"]
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        _front, _order, body = split_note(text)
+        # Drop the Suitability section: it is Jacky's own assessment, not the
+        # advert, and would otherwise pollute what the market is asking for.
+        body = re.split(r"^##\s+Suitability\s*$", body, maxsplit=1, flags=re.M)[0]
+        body = "\n".join(l for l in body.split("\n") if not l.lstrip().startswith("#"))
+        words = set()
+        for token in re.findall(r"[A-Za-z][A-Za-z+#.\-]{2,}", body.lower()):
+            token = token.strip(".-")
+            if len(token) < 3 or token in STOPWORDS or token.isdigit():
+                continue
+            words.add(token)
+        bucket = None
+        if midpoint and row.get("applied"):
+            bucket = late if row["applied"] >= midpoint else early
+        for word in words:
+            totals[word] = totals.get(word, 0) + 1
+            if bucket is not None:
+                bucket[word] = bucket.get(word, 0) + 1
+    early_total = sum(1 for r in dated if r["applied"] < midpoint) if midpoint else 0
+    late_total = len(dated) - early_total
+    out = [
+        {
+            "term": term,
+            "notes": count,
+            "earlyShare": round(early.get(term, 0) / early_total, 4) if early_total else 0,
+            "lateShare": round(late.get(term, 0) / late_total, 4) if late_total else 0,
+        }
+        for term, count in totals.items() if count >= 3
+    ]
+    out.sort(key=lambda d: -d["notes"])
+    return {"terms": out[:limit], "earlyNotes": early_total, "lateNotes": late_total,
+            "splitAt": midpoint}
+
+
 # --------------------------------------------------------------------------- #
 # HTTP
 # --------------------------------------------------------------------------- #
@@ -595,6 +718,28 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/positions":
             self._json({"positions": list_notes(), "today": datetime.date.today().isoformat()})
+            return
+        if route == "/api/insights":
+            rows = list_notes()
+            places: dict[str, dict] = {}
+            unplaced: dict[str, int] = {}
+            for row in rows:
+                point = geocode(row.get("location"))
+                label = (row.get("location") or "Unknown").strip() or "Unknown"
+                if point is None:
+                    unplaced[label] = unplaced.get(label, 0) + 1
+                    continue
+                entry = places.setdefault(label, {"label": label, "lat": point[0], "lon": point[1],
+                                                  "count": 0, "companies": []})
+                entry["count"] += 1
+                if row["company"] not in entry["companies"]:
+                    entry["companies"].append(row["company"])
+            self._json({
+                "termStats": term_stats(rows),
+                "places": sorted(places.values(), key=lambda p: -p["count"]),
+                "unplaced": [{"label": k, "count": v} for k, v in
+                             sorted(unplaced.items(), key=lambda kv: -kv[1])],
+            })
             return
         if route == "/api/file":
             query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
