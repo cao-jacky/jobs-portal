@@ -550,26 +550,119 @@ GEOCODES = {
 }
 PLACELESS = {"remote", "hybrid", "anywhere", "eu", "europe", "nordics", "unknown", ""}
 
-STOPWORDS = set("""
-a an the and or but if then than that this these those of in on at to for with without from by as is
-are was were be been being have has had do does did will would shall should can could may might must
-you your yours we our ours us they their them he she it its i me my mine who whom which what when
-where why how all any both each few more most other some such no nor not only own same so too very
-just also about into over under again further once here there while during before after above below
-up down out off between through against because about own s t don now d ll m o re ve y ain aren
-couldn didn doesn hadn hasn haven isn ma mightn mustn needn shan shouldn wasn weren won wouldn
-work working works role roles job jobs position positions team teams company companies experience
-description suitability verdict requirement requirements responsibilities tasks offer offers support
-part parts one two three first second next best better able ensure ensuring based provide providing
-related various different every many much need needs needed want wants may must plus level levels
-environment environments world global international leading market business businesses customer
-customers client clients service services product products project projects process processes
-please take bring together include includes grow value values field fields key focus impact
-complex modern digital diverse relevant required background e.g i.e information
-you'll we're we'll our will new using use used within across including etc within also well good
-strong great join looking apply application applications candidate candidates skills ability
-opportunity opportunities help make like well people person years year time
-""".split())
+# Words that say nothing about what a role wants. Grouped so the list stays
+# maintainable rather than becoming an unexplained blob.
+FUNCTION_WORDS = """
+a an the and or but if then than that this these those of in on at to for with without from by as
+is are was were be been being am have has had having do does did doing will would shall should can
+could may might must ought you your yours yourself we our ours us ourselves they their theirs them
+he him his she her hers it its i me my mine who whom whose which what when where why how all any
+both each few more most others some such no nor not only own same so too very just also about into
+over under again further once here there while during before after above below up down out off
+between through against because both either neither every another via per within across upon
+""".split()
+
+RECRUITING_BOILERPLATE = """
+work working works worked role roles job jobs position positions team teams company companies
+experience experienced description descriptions suitability verdict requirement requirements
+responsibility responsibilities task tasks offer offers offering support supporting apply
+application applications applicant candidate candidates skill skills ability abilities
+opportunity opportunities join joining looking seeking hire hiring recruitment recruiting
+salary benefits perks culture office hybrid remote onsite fulltime permanent contract
+employer employee employees colleague colleagues staff people person persons individual
+you'll we'll we're it's don't
+please thank thanks welcome forward hear us contact email phone send submit link deadline
+period process interview interviews cv resume letter
+"""
+
+FILLER = """
+part parts one two three four five first second third next last best better good great strong
+able ensure ensuring provide providing providing based various different every many much need
+needs needed want wants may must plus level levels environment environments world global
+international leading market business businesses customer customers client clients service
+services product products project projects process processes solution solutions
+new using use used uses within across including include includes etc well also relevant
+required key focus impact complex modern digital diverse background take bring together grow
+growing value values field fields information related area areas way ways thing things
+lot make makes making get gets getting go goes going come comes see look looks
+day days week weeks month months year years time times now today
+other others another like likes similar help helps helping contribute contributing
+become becoming keep keeping bring brings given give gives given e.g i.e ie eg
+across around along among since about upon whether either whatever however therefore
+location locations career careers professional professionals interest interested real
+find finds expect expects expected challenge challenges enable enables enabling
+create creates creating deliver delivers delivered delivery drive drives driven driving
+improve improves improving implement implements lead leads led expert experts
+"""
+
+WEB_NOISE = """
+http https www com net org fi se no dk eu io ai dev co uk html php aspx utm src ref
+linkedin greenhouse workday teamtailor smartrecruiters lever jobvite indeed glassdoor
+oyj plc ltd inc gmbh
+"""
+
+STOPWORDS = set(FUNCTION_WORDS) | set(RECRUITING_BOILERPLATE.split()) \
+    | set(FILLER.split()) | set(WEB_NOISE.split())
+
+TLD_RE = re.compile(r"\.(com|net|org|fi|se|no|dk|eu|io|ai|dev|co|uk|de|us|info|jobs)$")
+TOKEN_RE = re.compile(r"[a-zäöå][a-zäöå+#.\-]{2,}")
+
+
+def strip_noise(text: str) -> str:
+    """Remove anything that is plumbing rather than prose before counting words."""
+    text = re.sub(r"<[^>]+>", " ", text)                          # stray html
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r" \1 ", text)     # markdown links, keep the label
+    text = re.sub(r"\bhttps?://\S+", " ", text)                   # bare urls
+    text = re.sub(r"\bwww\.\S+", " ", text)
+    text = re.sub(r"\S+@\S+\.\S+", " ", text)                     # email addresses
+    text = re.sub(r"\b[\w.-]+\.(?:com|net|org|fi|se|no|dk|eu|io|ai|dev|co|uk)\b", " ", text, flags=re.I)
+    text = re.sub(r"[#*_`>|]", " ", text)                         # markdown punctuation
+    return text
+
+
+# Dotted tokens are almost always URL debris. These are the exceptions.
+DOTTED_KEEP = {"node.js", "next.js", "vue.js", "d3.js", ".net", "asp.net", "socket.io"}
+
+
+def useful_token(token: str) -> bool:
+    token = token.strip(".-+")
+    if len(token) < 3 or token in STOPWORDS:
+        return False
+    if any(ch.isdigit() for ch in token):
+        return False
+    if "." in token and token not in DOTTED_KEEP:
+        return False
+    if TLD_RE.search(token):
+        return False
+    return True
+
+
+# Order and coverage matter: -ation is deliberately absent so that it is reduced
+# by -ion instead, which lands collaboration in the same family as collaborative.
+SUFFIXES = ("ings", "ing", "ements", "ement", "ments", "ment",
+            "ities", "ity", "ives", "ive", "ions", "ion", "ers", "er", "ies", "es", "ed", "s")
+
+
+def stem(word: str) -> str:
+    """Collapse a word to a rough family key.
+
+    Deliberately crude: it only has to put `develop`, `developing` and
+    `development` in one bucket so the cloud stops showing three entries for one
+    idea. The surface form actually displayed is the commonest one in the family,
+    so an ugly stem is never shown to anyone.
+    """
+    if word in DOTTED_KEEP or "-" in word:
+        return word
+    previous = None
+    while word != previous:
+        previous = word
+        for suffix in SUFFIXES:
+            if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+                word = word[: -len(suffix)]
+                break
+    if len(word) > 4 and word.endswith("y"):
+        word = word[:-1]
+    return word.rstrip("e") or previous
 
 
 def geocode(location: str | None) -> tuple[float, float] | None:
@@ -602,6 +695,7 @@ def term_stats(rows: list[dict], limit: int = 70) -> list[dict]:
     early: dict[str, int] = {}
     late: dict[str, int] = {}
     where: dict[str, list[str]] = {}
+    surfaces: dict[str, dict[str, int]] = {}
     for row in rows:
         path = JOBS_DIR / row["path"]
         try:
@@ -613,25 +707,28 @@ def term_stats(rows: list[dict], limit: int = 70) -> list[dict]:
         # advert, and would otherwise pollute what the market is asking for.
         body = re.split(r"^##\s+Suitability\s*$", body, maxsplit=1, flags=re.M)[0]
         body = "\n".join(l for l in body.split("\n") if not l.lstrip().startswith("#"))
-        words = set()
-        for token in re.findall(r"[A-Za-z][A-Za-z+#.\-]{2,}", body.lower()):
-            token = token.strip(".-")
-            if len(token) < 3 or token in STOPWORDS or token.isdigit():
+        words: dict[str, str] = {}
+        for token in TOKEN_RE.findall(strip_noise(body).lower()):
+            if not useful_token(token):
                 continue
-            words.add(token)
+            token = token.strip(".-+")
+            family = stem(token)
+            words.setdefault(family, token)
+            surfaces.setdefault(family, {})
+            surfaces[family][token] = surfaces[family].get(token, 0) + 1
         bucket = None
         if midpoint and row.get("applied"):
             bucket = late if row["applied"] >= midpoint else early
-        for word in words:
-            totals[word] = totals.get(word, 0) + 1
-            where.setdefault(word, []).append(row["path"])
+        for family in words:
+            totals[family] = totals.get(family, 0) + 1
+            where.setdefault(family, []).append(row["path"])
             if bucket is not None:
-                bucket[word] = bucket.get(word, 0) + 1
+                bucket[family] = bucket.get(family, 0) + 1
     early_total = sum(1 for r in dated if r["applied"] < midpoint) if midpoint else 0
     late_total = len(dated) - early_total
     out = [
         {
-            "term": term,
+            "term": max(surfaces.get(term, {term: 1}).items(), key=lambda kv: (kv[1], -len(kv[0])))[0],
             "notes": count,
             "earlyShare": round(early.get(term, 0) / early_total, 4) if early_total else 0,
             "lateShare": round(late.get(term, 0) / late_total, 4) if late_total else 0,
