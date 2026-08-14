@@ -564,6 +564,8 @@ part parts one two three first second next best better able ensure ensuring base
 related various different every many much need needs needed want wants may must plus level levels
 environment environments world global international leading market business businesses customer
 customers client clients service services product products project projects process processes
+please take bring together include includes grow value values field fields key focus impact
+complex modern digital diverse relevant required background e.g i.e information
 you'll we're we'll our will new using use used within across including etc within also well good
 strong great join looking apply application applications candidate candidates skills ability
 opportunity opportunities help make like well people person years year time
@@ -599,6 +601,7 @@ def term_stats(rows: list[dict], limit: int = 70) -> list[dict]:
     totals: dict[str, int] = {}
     early: dict[str, int] = {}
     late: dict[str, int] = {}
+    where: dict[str, list[str]] = {}
     for row in rows:
         path = JOBS_DIR / row["path"]
         try:
@@ -621,6 +624,7 @@ def term_stats(rows: list[dict], limit: int = 70) -> list[dict]:
             bucket = late if row["applied"] >= midpoint else early
         for word in words:
             totals[word] = totals.get(word, 0) + 1
+            where.setdefault(word, []).append(row["path"])
             if bucket is not None:
                 bucket[word] = bucket.get(word, 0) + 1
     early_total = sum(1 for r in dated if r["applied"] < midpoint) if midpoint else 0
@@ -631,6 +635,7 @@ def term_stats(rows: list[dict], limit: int = 70) -> list[dict]:
             "notes": count,
             "earlyShare": round(early.get(term, 0) / early_total, 4) if early_total else 0,
             "lateShare": round(late.get(term, 0) / late_total, 4) if late_total else 0,
+            "paths": where.get(term, []),
         }
         for term, count in totals.items() if count >= 3
     ]

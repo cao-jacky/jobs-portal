@@ -224,6 +224,45 @@
   .otd { display:flex; gap:10px; align-items:baseline; font-size:13.5px; }
   .otd .yr { font-family:var(--mono); font-size:11.5px; color:var(--ink-muted); min-width:78px; }
   .otd .what { color:var(--ink-2); }
+  .wall { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+          background:var(--hairline); border:1px solid var(--hairline); border-radius:6px; overflow:hidden; }
+  .wall div { background:var(--surface); padding:14px 16px; display:flex; flex-direction:column; gap:2px; }
+  .wall .n { font-size:24px; font-weight:600; letter-spacing:-.02em; line-height:1.15; }
+  .wall .k { font-family:var(--mono); font-size:10px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-muted); }
+  .wall .w { font-size:12px; color:var(--ink-2); }
+  .constellation { display:flex; flex-direction:column; gap:2px; }
+  .con-row { display:grid; grid-template-columns:190px 1fr; gap:12px; align-items:center;
+             padding:6px 8px; border-radius:4px; }
+  .con-row:hover { background:var(--sunken); }
+  .con-row .who { font-size:13.5px; font-weight:560; display:flex; align-items:center; gap:7px; }
+  .con-row .who em { font-family:var(--mono); font-size:10.5px; font-style:normal; color:var(--ink-muted); }
+  .con-track { position:relative; height:22px; }
+  .con-track .axis { position:absolute; left:0; right:0; top:50%; height:1px; background:var(--hairline); }
+  .con-dot { position:absolute; top:50%; width:11px; height:11px; margin:-5.5px 0 0 -5.5px; border-radius:50%;
+             box-shadow:0 0 0 2px var(--surface); cursor:pointer; }
+  .con-axis { display:flex; justify-content:space-between; font-family:var(--mono);
+              font-size:10px; color:var(--ink-muted); margin-left:202px; }
+  .cloud { display:flex; flex-wrap:wrap; gap:4px 12px; align-items:baseline; line-height:1.35; }
+  .cloud a { text-decoration:none; color:var(--ink-2); }
+  .cloud a:hover { color:var(--accent); text-decoration:none; }
+  .cloud .up::after { content:"↑"; font-size:.62em; vertical-align:super; color:var(--good); margin-left:1px; }
+  .cloud .down::after { content:"↓"; font-size:.62em; vertical-align:super; color:var(--ink-muted); margin-left:1px; }
+  .movers { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; }
+  .movers ol { margin:0; padding-left:20px; font-size:13px; color:var(--ink-2); }
+  .movers li { margin-bottom:3px; }
+  .movers h3 { margin:0 0 7px; font-size:11px; font-family:var(--mono); letter-spacing:.07em;
+               text-transform:uppercase; color:var(--ink-muted); font-weight:500; }
+  .mapwrap { display:grid; grid-template-columns:1fr 190px; gap:18px; align-items:start; }
+  @media (max-width:760px) { .mapwrap { grid-template-columns:1fr; } }
+  .mapwrap svg { width:100%; height:auto; display:block; }
+  .map-grid { stroke:var(--hairline); stroke-width:1; fill:none; }
+  .map-bubble { fill:var(--accent); fill-opacity:.28; stroke:var(--accent); stroke-width:1.5; }
+  .map-label { font-family:var(--mono); font-size:9px; fill:var(--ink-2); }
+  .map-count { font-family:var(--mono); font-size:8.5px; fill:var(--ink-muted); }
+  .map-scale { stroke:var(--baseline); stroke-width:1; }
+  .map-side { display:flex; flex-direction:column; gap:9px; }
+  .map-side .row { display:flex; justify-content:space-between; gap:10px; font-size:12.5px; color:var(--ink-2); }
+  .map-side .row b { font-family:var(--mono); font-weight:500; color:var(--ink); }
   .form { display:flex; flex-direction:column; gap:14px; }
   .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
   .field { display:flex; flex-direction:column; gap:5px; }
@@ -305,6 +344,7 @@
       <div class="chips" id="status-chips" role="group" aria-label="Filter by status"></div>
       <div class="chips" id="year-chips" role="group" aria-label="Filter by year"></div>
       <span class="readout" id="readout"></span>
+      <button id="clear-term" class="chip" hidden></button>
     </div>
     <div class="scroller">
       <table>
@@ -334,6 +374,35 @@
         </div>
       </div>
       <div class="heat-legend" id="heat-legend"></div>
+    </section>
+
+    <section class="panel">
+      <h2>The rejection wall</h2>
+      <div class="wall" id="wall"></div>
+      <p class="panel-note" id="wall-note"></p>
+    </section>
+
+    <section class="panel">
+      <h2>Companies applied to more than once</h2>
+      <div class="constellation" id="constellation"></div>
+      <div class="con-axis" id="con-axis"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Where the roles are</h2>
+      <div class="mapwrap">
+        <div id="map"></div>
+        <div class="map-side" id="map-side"></div>
+      </div>
+      <p class="panel-note">Bubble area is the number of applications. Locations without a
+        place, such as Remote, are listed beside the map rather than plotted.</p>
+    </section>
+
+    <section class="panel">
+      <h2>What the adverts ask for</h2>
+      <div class="cloud" id="cloud"></div>
+      <div class="movers" id="movers"></div>
+      <p class="panel-note" id="cloud-note"></p>
     </section>
 
     <section class="panel">
@@ -632,12 +701,180 @@ function renderOnThisDay() {
     : `<span class="empty">Nothing has happened on this date in a previous year.</span>`;
 }
 
+function renderWall() {
+  const gaps = DATA.map(r => r.daysToOutcome).filter(d => d !== null && d >= 0).sort((a, b) => a - b);
+  const rejections = DATA.filter(r => r.status === "Rejected" || r.status === "Not eligible");
+  const wins = DATA.filter(r => WON.has(r.status));
+  const sameDay = DATA.filter(r => r.daysToOutcome === 0 || r.daysToOutcome === 1);
+
+  // how many applications have gone out since the most recent interview
+  const winDates = wins.map(r => r.applied).filter(Boolean).sort();
+  const lastWin = winDates[winDates.length - 1];
+  const streak = lastWin ? DATA.filter(r => r.applied && r.applied > lastWin && SENT.has(r.status)).length : null;
+  const longest = Math.max(0, ...DATA.map(r => r.daysOpen || 0));
+
+  const tile = (n, k, w) => `<div><span class="n">${n}</span><span class="k">${k}</span>${w ? `<span class="w">${w}</span>` : ""}</div>`;
+  $("wall").innerHTML = [
+    tile(rejections.length, "rejections", `out of ${DATA.filter(r => SENT.has(r.status)).length} sent`),
+    tile(gaps.length ? gaps[0] + "d" : "&ndash;", "fastest no", sameDay.length ? `${sameDay.length} came within a day` : ""),
+    tile(gaps.length ? gaps[gaps.length - 1] + "d" : "&ndash;", "slowest no", "the long wait"),
+    tile(streak === null ? "&ndash;" : streak, "sent since the last interview", lastWin ? `most recent was ${lastWin}` : "none yet"),
+    tile(longest ? longest + "d" : "&ndash;", "longest silence", "still no answer"),
+  ].join("");
+  $("wall-note").textContent = wins.length
+    ? `${wins.length} of those conversations turned into an interview. That is the number worth moving.`
+    : "No interviews recorded yet.";
+}
+
+function renderConstellation() {
+  const byCompany = new Map();
+  DATA.forEach(r => {
+    if (!byCompany.has(r.company)) byCompany.set(r.company, []);
+    byCompany.get(r.company).push(r);
+  });
+  const repeats = [...byCompany.entries()].filter(([, rows]) => rows.length > 1);
+  if (!repeats.length) { $("constellation").innerHTML = `<span class="empty">No company appears twice yet.</span>`; return; }
+
+  const dates = DATA.map(r => r.applied || r.deadline).filter(Boolean).sort();
+  const first = new Date(dates[0] + "T00:00:00").getTime();
+  const last = new Date(CONFIG.today + "T00:00:00").getTime();
+  const span = Math.max(1, last - first);
+  const at = iso => ((new Date(iso + "T00:00:00").getTime() - first) / span) * 100;
+
+  repeats.sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+  $("constellation").innerHTML = repeats.map(([company, rows]) => {
+    const dots = rows.filter(r => r.applied || r.deadline).map(r => {
+      const when = r.applied || r.deadline;
+      return `<span class="con-dot" style="left:${at(when).toFixed(2)}%;background:${TONE[r.status] || TONE.Unknown}"
+        data-open="${esc(r.path)}" data-tip="${esc(r.title)} &middot; ${esc(r.status)} &middot; ${when}"></span>`;
+    }).join("");
+    const outcome = rows.some(r => WON.has(r.status)) ? " · interviewed" : "";
+    return `<div class="con-row"><span class="who">${esc(company)}<em>×${rows.length}${outcome}</em></span>
+      <span class="con-track"><span class="axis"></span>${dots}</span></div>`;
+  }).join("");
+  $("con-axis").innerHTML = `<span>${dates[0]}</span><span>${CONFIG.today}</span>`;
+}
+
+function renderCloud() {
+  const stats = insights && insights.termStats;
+  if (!stats || !stats.terms.length) { $("cloud").innerHTML = `<span class="empty">Not enough advert text yet.</span>`; return; }
+  const terms = stats.terms;
+  const peak = terms[0].notes;
+  const floor = terms[terms.length - 1].notes;
+  const alphabetical = [...terms].sort((a, b) => a.term.localeCompare(b.term));
+  $("cloud").innerHTML = alphabetical.map(t => {
+    const weight = (t.notes - floor) / Math.max(1, peak - floor);
+    const size = (13 + weight * 20).toFixed(1);
+    const drift = t.lateShare - t.earlyShare;
+    const cls = drift > 0.06 ? "up" : drift < -0.06 ? "down" : "";
+    return `<a class="${cls}" href="#" style="font-size:${size}px;font-weight:${weight > .55 ? 600 : 450}"
+      data-term="${esc(t.term)}"
+      data-tip="${esc(t.term)} &middot; in ${t.notes} adverts &middot; ${Math.round(t.earlyShare * 100)}% → ${Math.round(t.lateShare * 100)}%">${esc(t.term)}</a>`;
+  }).join("");
+
+  const drifted = terms.map(t => ({ ...t, drift: t.lateShare - t.earlyShare }));
+  const rising = [...drifted].sort((a, b) => b.drift - a.drift).slice(0, 6);
+  const fading = [...drifted].sort((a, b) => a.drift - b.drift).slice(0, 6);
+  const pct = t => `${Math.round(t.earlyShare * 100)}% → ${Math.round(t.lateShare * 100)}%`;
+  $("movers").innerHTML = `
+    <div><h3>Asked for more often lately</h3><ol>${rising.map(t => `<li>${esc(t.term)} <span style="color:var(--ink-muted)">${pct(t)}</span></li>`).join("")}</ol></div>
+    <div><h3>Asked for less often</h3><ol>${fading.map(t => `<li>${esc(t.term)} <span style="color:var(--ink-muted)">${pct(t)}</span></li>`).join("")}</ol></div>`;
+  $("cloud-note").textContent = `Share of adverts containing each term, ${stats.earlyNotes} sent before `
+    + `${stats.splitAt} against ${stats.lateNotes} sent since. Click a term to filter the ledger by it.`;
+}
+
+function renderMap() {
+  const places = (insights && insights.places) || [];
+  const unplaced = (insights && insights.unplaced) || [];
+  if (!places.length) { $("map").innerHTML = `<span class="empty">No locations could be placed.</span>`; return; }
+
+  const W = 640, H = 380, PAD = 46;
+
+  // Fit to where the applications actually are. One role in another country would
+  // otherwise stretch the bounds until the home cluster collapsed into one blob,
+  // so distant places are listed instead of plotted.
+  const totalCount = places.reduce((sum, p) => sum + p.count, 0);
+  const centreLat = places.reduce((sum, p) => sum + p.lat * p.count, 0) / totalCount;
+  const centreLon = places.reduce((sum, p) => sum + p.lon * p.count, 0) / totalCount;
+  const kmAway = p => {
+    const dLat = (p.lat - centreLat) * 111.32;
+    const dLon = (p.lon - centreLon) * 111.32 * Math.cos(centreLat * Math.PI / 180);
+    return Math.sqrt(dLat * dLat + dLon * dLon);
+  };
+  const near = places.filter(p => kmAway(p) <= 200);
+  const far = places.filter(p => kmAway(p) > 200);
+  const plotted = near.length >= 2 ? near : places;
+  const offMap = near.length >= 2 ? far : [];
+
+  const lats = plotted.map(p => p.lat), lons = plotted.map(p => p.lon);
+  // pad the bounds so a single cluster does not collapse to a point
+  const latSpan = Math.max(0.5, Math.max(...lats) - Math.min(...lats));
+  const lonSpan = Math.max(1.0, Math.max(...lons) - Math.min(...lons));
+  const latMid = (Math.max(...lats) + Math.min(...lats)) / 2;
+  const lonMid = (Math.max(...lons) + Math.min(...lons)) / 2;
+  const lat0 = latMid - latSpan * 0.75, lat1 = latMid + latSpan * 0.75;
+  const lon0 = lonMid - lonSpan * 0.75, lon1 = lonMid + lonSpan * 0.75;
+  // equirectangular, with longitude squeezed by the latitude so shapes stay sane
+  const cos = Math.cos(latMid * Math.PI / 180);
+  const x = lon => PAD + ((lon - lon0) / (lon1 - lon0)) * (W - 2 * PAD);
+  const y = lat => PAD + ((lat1 - lat) / (lat1 - lat0)) * (H - 2 * PAD);
+
+  const maxCount = Math.max(...plotted.map(p => p.count));
+  const radius = n => 5 + Math.sqrt(n / maxCount) * 26;
+
+  const gridLines = [];
+  for (let lat = Math.ceil(lat0 * 2) / 2; lat <= lat1; lat += 0.5)
+    gridLines.push(`<line class="map-grid" x1="${PAD}" y1="${y(lat).toFixed(1)}" x2="${W - PAD}" y2="${y(lat).toFixed(1)}"/>`);
+  for (let lon = Math.ceil(lon0); lon <= lon1; lon += 1)
+    gridLines.push(`<line class="map-grid" x1="${x(lon).toFixed(1)}" y1="${PAD}" x2="${x(lon).toFixed(1)}" y2="${H - PAD}"/>`);
+
+  // a scale bar, because a bare graticule gives no sense of distance
+  const kmPerDegLon = 111.32 * cos;
+  const barKm = lonSpan > 6 ? 200 : lonSpan > 2 ? 50 : 10;
+  const barPx = (barKm / kmPerDegLon) / (lon1 - lon0) * (W - 2 * PAD);
+
+  // alternate the label side, largest bubble first, so small neighbours are not buried
+  const byCount = [...plotted].sort((a, b) => b.count - a.count);
+  const bubbles = byCount.map((p, i) => {
+    const r = radius(p.count);
+    const above = i % 2 === 0;
+    return `<g data-tip="${esc(p.label)} &middot; ${p.count} application${p.count === 1 ? "" : "s"} &middot; ${esc(p.companies.slice(0, 6).join(", "))}" tabindex="0">
+      <circle class="map-bubble" cx="${x(p.lon).toFixed(1)}" cy="${y(p.lat).toFixed(1)}" r="${r.toFixed(1)}"/>
+      <text class="map-label" x="${x(p.lon).toFixed(1)}" y="${(above ? y(p.lat) - r - 5 : y(p.lat) + r + 11).toFixed(1)}" text-anchor="middle">${esc(p.label)}</text>
+      <text class="map-count" x="${x(p.lon).toFixed(1)}" y="${(y(p.lat) + 3.5).toFixed(1)}" text-anchor="middle">${p.count}</text>
+    </g>`;
+  }).join("");
+
+  $("map").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="Applications by location: ${plotted.map(p => `${p.label} ${p.count}`).join(", ")}">
+    ${gridLines.join("")}
+    ${bubbles}
+    <g transform="translate(${PAD},${H - 18})">
+      <line class="map-scale" x1="0" y1="0" x2="${barPx.toFixed(1)}" y2="0"/>
+      <line class="map-scale" x1="0" y1="-4" x2="0" y2="4"/>
+      <line class="map-scale" x1="${barPx.toFixed(1)}" y1="-4" x2="${barPx.toFixed(1)}" y2="4"/>
+      <text class="map-count" x="${(barPx / 2).toFixed(1)}" y="-7" text-anchor="middle">${barKm} km</text>
+    </g>
+  </svg>`;
+
+  const asides = [...offMap.map(p => ({ label: p.label + " (off this map)", count: p.count })), ...unplaced];
+  $("map-side").innerHTML = plotted.map(p =>
+      `<span class="row"><span>${esc(p.label)}</span><b>${p.count}</b></span>`).join("")
+    + (asides.length ? `<span class="row" style="margin-top:6px;border-top:1px solid var(--hairline);padding-top:9px">
+        <span style="color:var(--ink-muted)">not plotted</span><b></b></span>`
+        + asides.map(u => `<span class="row"><span>${esc(u.label)}</span><b>${u.count}</b></span>`).join("") : "");
+}
+
 async function renderInsights() {
   renderHeatmap();
+  renderWall();
+  renderConstellation();
   renderOnThisDay();
   if (!insights) {
     try { insights = await api("/api/insights"); } catch (err) { toast(err.message, true); return; }
   }
+  renderMap();
+  renderCloud();
 }
 
 function showView(which) {
@@ -674,7 +911,7 @@ window.addEventListener("scroll", hideTip, { passive: true });
 
 /* ---------------- ledger ---------------- */
 
-const state = { q:"", status:null, year:null, key:"applied", dir:"desc" };
+const state = { q:"", status:null, year:null, key:"applied", dir:"desc", term:null, termPaths:null };
 
 const KIND_LABEL = { letter: "letter", resume: "CV", cv: "CV" };
 
@@ -719,6 +956,7 @@ function renderLedger() {
   let rows = DATA.filter(r => {
     if (state.status && r.status !== state.status) return false;
     if (state.year && r.year !== state.year) return false;
+    if (state.termPaths && !state.termPaths.has(r.path)) return false;
     if (state.q && !`${r.company} ${r.title} ${r.location}`.toLowerCase().includes(state.q)) return false;
     return true;
   });
@@ -753,6 +991,9 @@ function renderLedger() {
     </tr>`;
   }).join("") || `<tr><td colspan="7" class="empty" style="padding:20px 12px">Nothing matches those filters.</td></tr>`;
   $("readout").textContent = `${rows.length} of ${DATA.length} shown`;
+  const clear = $("clear-term");
+  clear.hidden = !state.term;
+  if (state.term) clear.textContent = `adverts mentioning "${state.term}" ✕`;
 }
 
 /* ---------------- drawer ---------------- */
@@ -1034,6 +1275,23 @@ document.addEventListener("click", event => {
     state[group] = state[group] === chip.dataset.value ? null : chip.dataset.value;
     document.querySelectorAll(`.chip[data-group="${group}"]`).forEach(c =>
       c.setAttribute("aria-pressed", String(state[group] === c.dataset.value)));
+    renderLedger();
+    return;
+  }
+  const term = event.target.closest("[data-term]");
+  if (term) {
+    event.preventDefault();
+    const name = term.dataset.term;
+    const entry = ((insights && insights.termStats && insights.termStats.terms) || []).find(t => t.term === name);
+    state.term = name;
+    state.termPaths = new Set((entry && entry.paths) || []);
+    showView("ledger");
+    renderLedger();
+    return;
+  }
+  if (event.target.closest("#clear-term")) {
+    state.term = null;
+    state.termPaths = null;
     renderLedger();
     return;
   }
