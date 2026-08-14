@@ -201,7 +201,11 @@
                 background:var(--sunken); border-left:3px solid var(--warning); border-radius:0 4px 4px 0; font-size:13px; }
   .draft-note b { font-weight:600; }
   .draft-note button { font-size:12px; padding:4px 9px; }
-  .draft-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--warning); margin-left:7px; vertical-align:middle; }
+  .draft-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:transparent;
+               border:2px solid var(--warning); margin-left:7px; vertical-align:middle; box-sizing:border-box; }
+  td .co { display:flex; align-items:center; gap:0; }
+  .status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex:none;
+                margin-right:9px; box-shadow:0 0 0 1px var(--ring) inset; }
   @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
 </head>
@@ -517,7 +521,10 @@ function renderLedger() {
     const showRel = r.daysToDeadline !== null && r.status === "Not applied";
     const relCls = r.daysToDeadline < 0 ? "flag" : r.daysToDeadline <= 3 ? "flag warn" : "";
     return `<tr data-path="${esc(r.path)}" class="${current && current.path === r.path ? "active" : ""}">
-      <td><div class="co">${esc(r.company)}${drafts.has(r.path) ? '<span class="draft-dot" title="unsaved draft in this browser"></span>' : ""}</div><div class="ti">${esc(r.title)}</div></td>
+      <td>
+        <div class="co"><span class="status-dot" style="background:${TONE[r.status] || TONE.Unknown}" title="${esc(r.status)}"></span>${esc(r.company)}${drafts.has(r.path) ? '<span class="draft-dot" title="unsaved draft in this browser"></span>' : ""}</div>
+        <div class="ti">${esc(r.title)}</div>
+      </td>
       <td class="loc">${esc(r.location)}</td>
       <td>${statusSelect(r)}</td>
       <td class="num">${r.applied || "&ndash;"}</td>
