@@ -682,6 +682,23 @@ class Handler(BaseHTTPRequestHandler):
 
         _front, _order, current_body = split_note(existing)
 
+        # Stamp the date a status transition implies, but only when the field
+        # would otherwise be left empty, so a date set by hand is never touched.
+        auto_filled: dict[str, str] = {}
+        if "job_status" in edits:
+            was = (_front.get("job_status") or "").strip()
+            now = (edits["job_status"] or "").strip()
+            if now != was:
+                stamp = datetime.date.today().isoformat()
+                target = "date_applied" if now == "Applied" else (
+                    "date_rejected" if now in {"Rejected", "Not eligible"} else None
+                )
+                if target:
+                    proposed = edits.get(target, _front.get(target))
+                    if not (proposed or "").strip():
+                        edits[target] = stamp
+                        auto_filled[target] = stamp
+
         new_body = payload["body"] if isinstance(payload.get("body"), str) else None
         if new_body is not None and new_body.strip() == current_body.strip():
             new_body = None                      # body untouched, leave those bytes alone
@@ -692,6 +709,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({
                 "saved": relative(path),
                 "backup": None,
+                "autoFilled": {},
                 "unchanged": True,
                 "row": row_for(path, today),
                 "mtime": path.stat().st_mtime,
@@ -704,6 +722,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json({
             "saved": relative(path),
             "backup": saved_backup,
+            "autoFilled": auto_filled,
             "row": row_for(path, today),
             "mtime": path.stat().st_mtime,
         })

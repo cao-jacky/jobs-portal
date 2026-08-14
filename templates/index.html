@@ -802,7 +802,10 @@ async function saveNote() {
     current = fresh;
     $("view").innerHTML = fresh.html;
     $("save-state").textContent = "saved";
-    toast(result.backup ? "Saved. Previous version kept in .portal-backups" : "Saved.");
+    const stamped = Object.entries(result.autoFilled || {});
+    toast(stamped.length
+      ? `Saved, and ${stamped.map(([k, v]) => `${k.replace("date_", "")} set to ${v}`).join(", ")}.`
+      : (result.backup ? "Saved. Previous version kept in .portal-backups" : "Saved."));
   } catch (err) {
     $("save-state").textContent = "not saved";
     toast(err.message, true);
@@ -819,7 +822,10 @@ async function quickStatus(path, value) {
     if (current && current.path === path) current.mtime = result.mtime;
     renderSummary();
     renderLedger();
-    toast(`${result.row.company} set to ${value}.`);
+    const stamped = Object.entries(result.autoFilled || {});
+    toast(stamped.length
+      ? `${result.row.company} set to ${value}, ${stamped.map(([k, v]) => `${k.replace("date_", "")} ${v}`).join(", ")}.`
+      : `${result.row.company} set to ${value}.`);
   } catch (err) {
     toast(err.message, true);
     load();
