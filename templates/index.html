@@ -211,11 +211,17 @@
   .tab { font-size:13px; padding:6px 13px; border-radius:5px; border:1px solid var(--hairline);
          background:var(--surface); color:var(--ink-2); cursor:pointer; }
   .tab[aria-selected="true"] { background:var(--accent-soft); border-color:var(--accent); color:var(--ink); font-weight:520; }
-  .heat { display:flex; gap:3px; overflow-x:auto; padding-bottom:4px; }
+  /* The grid and its month labels must scroll as one unit, or they drift out of
+     alignment. The scroller needs min-width:0 so it can shrink inside the flex
+     row instead of pushing the panel wider than the page. */
+  .heat-frame { display:flex; align-items:flex-start; gap:0; min-width:0; }
+  .heat-scroll { overflow-x:auto; min-width:0; flex:1 1 auto; padding-bottom:4px; }
+  .heat-inner { width:max-content; }
+  .heat { display:flex; gap:3px; }
   .heat-col { display:flex; flex-direction:column; gap:3px; }
-  .heat-cell { width:12px; height:12px; border-radius:2px; background:var(--sunken); }
+  .heat-cell { width:12px; height:12px; border-radius:2px; background:var(--sunken); flex:none; }
   .heat-months { display:flex; gap:3px; margin-top:5px; font-family:var(--mono); font-size:9.5px; color:var(--ink-muted); }
-  .heat-months span { width:15px; flex:none; white-space:nowrap; }
+  .heat-months span { width:12px; flex:none; white-space:nowrap; overflow:visible; }
   .heat-legend { display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10.5px; color:var(--ink-muted); }
   .heat-legend i { width:12px; height:12px; border-radius:2px; display:inline-block; }
   .heat-rows { display:flex; flex-direction:column; gap:3px; margin-right:6px;
@@ -367,11 +373,13 @@
   <div id="view-insights" hidden>
     <section class="panel">
       <h2>Applications sent, day by day</h2>
-      <div style="display:flex;gap:0;align-items:flex-start">
+      <div class="heat-frame">
         <div class="heat-rows" id="heat-rows"></div>
-        <div style="min-width:0">
-          <div class="heat" id="heat"></div>
-          <div class="heat-months" id="heat-months"></div>
+        <div class="heat-scroll">
+          <div class="heat-inner">
+            <div class="heat" id="heat"></div>
+            <div class="heat-months" id="heat-months"></div>
+          </div>
         </div>
       </div>
       <div class="heat-legend" id="heat-legend"></div>
@@ -684,6 +692,9 @@ function renderHeatmap() {
     return `<span>${label}</span>`;
   }).join("");
   $("heat-legend").innerHTML = `<span>quiet</span>${HEAT_STEPS.map(c => `<i style="background:${c}"></i>`).join("")}<span>${peak} in a day</span>`;
+  // the recent end is the interesting one, so start there when it does not all fit
+  const scroller = document.querySelector(".heat-scroll");
+  if (scroller) scroller.scrollLeft = scroller.scrollWidth;
 }
 
 function renderOnThisDay() {
