@@ -55,12 +55,38 @@ The advert text.
 
 ### Docker Compose
 
+The compose file pulls a prebuilt image from GHCR, so no build context is needed:
+
 ```
 cp .env.example .env      # then set JOBS_PATH to the folder containing Positions/
-docker compose up -d --build
+docker compose up -d
 ```
 
 Listens on <http://localhost:8412>.
+
+To build from source instead of pulling, add the build overlay:
+
+```
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
+### Portainer
+
+Add a stack pointing at this repository, or paste `docker-compose.yml` into the
+web editor, then set `JOBS_PATH` as a stack environment variable.
+
+Two things to know:
+
+- The image must be pullable. Portainer runs `docker compose pull` before
+  starting a stack, so a compose file naming a local-only image such as
+  `jobs-portal:latest` fails with `pull access denied … repository does not
+  exist`. That is why this compose file references the GHCR image and carries no
+  `build:` section.
+- **A GHCR package is private by default, even when its repository is public.**
+  After the first publish, open the package page on GitHub and either set its
+  visibility to public, or run `docker login ghcr.io` on the Docker host with a
+  personal access token that has `read:packages`. Without one of those,
+  Portainer's pull fails with the same access-denied error.
 
 ### Directly
 

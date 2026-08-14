@@ -1,14 +1,17 @@
 services:
   jobs-portal:
-    build: .
-    image: jobs-portal:latest
+    # Published by .github/workflows/publish.yml. Deliberately no `build:` here,
+    # so this file works in Portainer and anywhere else without a build context.
+    # To build locally instead, add docker-compose.build.yml (see the README).
+    image: ghcr.io/cao-jacky/jobs-portal:latest
     container_name: jobs-portal
     restart: unless-stopped
     ports:
       - "8412:8080"
     volumes:
       # The only mount that matters: the folder containing Positions/.
-      # Set JOBS_PATH in a .env file next to this one. See .env.example.
+      # Set JOBS_PATH in a .env file, or as a stack environment variable in
+      # Portainer. See .env.example.
       - ${JOBS_PATH:?set JOBS_PATH to the folder containing Positions/}:/data
     environment:
       JOBS_DIR: /data
@@ -20,7 +23,7 @@ services:
       # Set to 0 to stop keeping a copy of each note before overwriting it.
       BACKUPS: "1"
     # Writes land on the bind mount as this uid:gid. On a Linux host set these to
-    # the owner of the Jobs folder, otherwise new files end up owned by root.
+    # the owner of the notes folder, otherwise new files end up owned by root.
     # Find them with `id -u` and `id -g`.
     # user: "1000:1000"
     healthcheck:

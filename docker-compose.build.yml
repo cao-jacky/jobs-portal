@@ -1,0 +1,7 @@
+# Overlay for building the image locally instead of pulling the published one.
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+services:
+  jobs-portal:
+    build: .
+    image: jobs-portal:local
+    pull_policy: build
