@@ -55,7 +55,9 @@ The advert text.
 
 ### Docker Compose
 
-The compose file pulls a prebuilt image from GHCR, so no build context is needed:
+The compose file pulls a prebuilt image from GHCR, so no build context is needed.
+It defaults to the `:pdf` image, which includes LibreOffice; see
+[Cover letters](#cover-letters) for the smaller alternative:
 
 ```
 cp .env.example .env      # then set JOBS_PATH to the folder containing Positions/
@@ -159,16 +161,19 @@ Saving a letter takes the same care as saving a note: atomic replace, a timestam
 copy into `.portal-backups/`, and a `409` if the file changed on disk since it was
 opened.
 
-**PDF rendering needs LibreOffice, which is not in the default image.** Use the
-`:pdf` tag for a build that includes it:
+**PDF rendering needs LibreOffice**, which is why two images are published. The
+compose file uses `:pdf` by default, since rendering is the point of editing a
+letter in the first place:
 
-```
-image: ghcr.io/cao-jacky/jobs-portal:pdf
-```
+| Tag | Size | Platforms | Render PDF |
+|---|---|---|---|
+| `:pdf` (compose default) | ~790MB | amd64 | yes |
+| `:latest` | ~200MB | amd64, arm64 | no |
 
-That image is about 790MB against 200MB, and amd64 only. Without it, letters can
-still be read and edited; only the Render PDF button is unavailable, and the portal
-reports which mode it is in at startup and on `/healthz`.
+Swap to `:latest` if the host is arm64, or if the extra 590MB is not worth a button
+that is not wanted. Letters can still be read and edited on `:latest`; only
+rendering is unavailable, and the portal reports which mode it is in at startup and
+on `/healthz`.
 
 One caveat on fidelity: Times cannot be redistributed, so the image ships
 Liberation Serif, which LibreOffice substitutes for Times. It is metrically

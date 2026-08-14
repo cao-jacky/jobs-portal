@@ -3,9 +3,11 @@ services:
     # Published by .github/workflows/publish.yml. Deliberately no `build:` here,
     # so this file works in Portainer and anywhere else without a build context.
     # To build locally instead, add docker-compose.build.yml (see the README).
-    # Swap :latest for :pdf to get the larger image that can render letters to
-    # PDF with LibreOffice. Everything else works identically on both.
-    image: ghcr.io/cao-jacky/jobs-portal:latest
+    # The :pdf tag carries LibreOffice so letters can be rendered to PDF. It is
+    # about 790MB against 200MB, and amd64 only. Swap to :latest for the small
+    # image if PDF rendering is not wanted, or the host is arm64; everything
+    # else behaves identically on both.
+    image: ghcr.io/cao-jacky/jobs-portal:pdf
     container_name: jobs-portal
     restart: unless-stopped
     ports:
