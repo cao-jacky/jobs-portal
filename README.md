@@ -101,6 +101,8 @@ built-in subset renderer is used.
   gone quiet for more than 21 days. Both are clickable.
 - **Each row leads with a status colour dot**, so the ledger can be scanned
   without reading the status column.
+- **Charts** cover the funnel, applications sent per month, and the status
+  breakdown. Bars and rows report their exact figures on hover or keyboard focus.
 
 Light and dark themes both ship, following the viewer's system preference.
 

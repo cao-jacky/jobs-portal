@@ -96,6 +96,18 @@
   .stage .track { height:20px; } .stage .fill { height:100%; border-radius:0 4px 4px 0; min-width:6px; }
   .stage .n { font-family:var(--mono); font-size:13px; font-variant-numeric:tabular-nums; text-align:right; }
   .stage .n span { color:var(--ink-muted); font-size:11.5px; }
+  .bars { display:flex; align-items:flex-end; gap:3px; height:132px; border-bottom:1px solid var(--baseline); padding-top:4px; }
+  .bar-col { flex:1 1 0; display:flex; flex-direction:column; justify-content:flex-end; height:100%; min-width:0; cursor:default; }
+  .bar { background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; transition:filter 120ms ease; }
+  .bar-col:hover .bar, .bar-col:focus-visible .bar { filter:brightness(1.12) saturate(1.1); }
+  .bar-col:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+  .bar-axis { display:flex; gap:3px; margin-top:6px; }
+  .bar-axis span { flex:1 1 0; min-width:0; font-family:var(--mono); font-size:9.5px; color:var(--ink-muted);
+                   text-align:center; white-space:nowrap; overflow:hidden; }
+  #tip { position:fixed; z-index:41; pointer-events:none; opacity:0; transition:opacity 90ms ease;
+         background:var(--ink); color:var(--plane); font-family:var(--mono); font-size:11.5px; line-height:1.45;
+         padding:6px 9px; border-radius:4px; white-space:nowrap; }
+  #tip.on { opacity:1; }
   .breakdown { display:flex; flex-direction:column; gap:9px; }
   .brow { display:grid; grid-template-columns:118px 1fr 32px; align-items:center; gap:10px; }
   .brow .lbl { font-size:12.5px; color:var(--ink-2); display:flex; align-items:center; gap:6px; }
@@ -235,10 +247,16 @@
     </div>
   </section>
 
+  <section class="panel">
+    <h2>Funnel</h2>
+    <div class="funnel" id="funnel"></div>
+  </section>
+
   <section class="charts">
     <div class="panel">
-      <h2>Funnel</h2>
-      <div class="funnel" id="funnel"></div>
+      <h2>Applications sent by month</h2>
+      <div class="bars" id="months" role="img" aria-label="Applications sent per month"></div>
+      <div class="bar-axis" id="months-axis" aria-hidden="true"></div>
     </div>
     <div class="panel">
       <h2>Status of every note</h2>
@@ -317,6 +335,7 @@
   </footer>
 </aside>
 
+<div id="tip" role="status" aria-live="polite"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -458,11 +477,30 @@ function renderSummary() {
       <div class="track"><div class="fill" style="width:${DATA.length ? (n / DATA.length * 100).toFixed(1) : 0}%;background:${color}"></div></div>
       <span class="n">${n}<span> / ${DATA.length}</span></span></div>`).join("");
 
+  const byMonth = new Map();
+  sent.forEach(r => { if (r.appliedMonth) byMonth.set(r.appliedMonth, (byMonth.get(r.appliedMonth) || 0) + 1); });
+  const months = [...byMonth.keys()].sort();
+  const series = [];
+  if (months.length) {
+    const [y0, m0] = months[0].split("-").map(Number);
+    const [y1, m1] = months[months.length - 1].split("-").map(Number);
+    for (let y = y0, m = m0; y < y1 || (y === y1 && m <= m1); m === 12 ? (m = 1, y++) : m++) {
+      const key = `${y}-${String(m).padStart(2, "0")}`;
+      series.push({ key, n: byMonth.get(key) || 0 });
+    }
+  }
+  const peak = Math.max(1, ...series.map(v => v.n));
+  $("months").innerHTML = series.map(v => `<div class="bar-col" tabindex="0"
+      data-tip="${v.key} &middot; ${v.n} sent" aria-label="${v.key}: ${v.n} applications sent">
+      <div class="bar" style="height:${v.n ? Math.max(4, v.n / peak * 100) : 0}%"></div></div>`).join("");
+  $("months-axis").innerHTML = series.map((v, i) =>
+    `<span>${i === 0 || i === series.length - 1 || v.key.endsWith("-01") ? v.key.slice(2) : ""}</span>`).join("");
+
   const counts = new Map();
   DATA.forEach(r => counts.set(r.status, (counts.get(r.status) || 0) + 1));
   const present = ORDER.filter(s => counts.has(s));
   const top = Math.max(1, ...present.map(s => counts.get(s)));
-  $("breakdown").innerHTML = present.map(s => `<div class="brow">
+  $("breakdown").innerHTML = present.map(s => `<div class="brow" tabindex="0" data-tip="${esc(s)} &middot; ${counts.get(s)} of ${DATA.length}">
       <span class="lbl"><span class="dot" style="background:${TONE[s]}"></span>${esc(s)}</span>
       <div class="track"><div class="fill" style="width:${(counts.get(s) / top * 100).toFixed(1)}%;background:${TONE[s]}"></div></div>
       <span class="n">${counts.get(s)}</span></div>`).join("");
@@ -473,6 +511,27 @@ function renderSummary() {
   $("status-chips").innerHTML = present.map(s => chip(`${s} ${counts.get(s)}`, s, "status")).join("");
   $("year-chips").innerHTML = [...new Set(DATA.map(r => r.year))].sort().map(y => chip(y, y, "year")).join("");
 }
+
+/* ---------------- hover tooltip ---------------- */
+
+const tip = () => $("tip");
+function showTip(el, event) {
+  const text = el.getAttribute("data-tip");
+  if (!text) return;
+  const node = tip();
+  node.innerHTML = text;
+  node.classList.add("on");
+  const box = el.getBoundingClientRect();
+  const x = event && event.clientX ? event.clientX : box.left + box.width / 2;
+  node.style.left = Math.min(window.innerWidth - node.offsetWidth - 8, Math.max(8, x - node.offsetWidth / 2)) + "px";
+  node.style.top = Math.max(8, box.top - node.offsetHeight - 8) + "px";
+}
+const hideTip = () => tip().classList.remove("on");
+document.addEventListener("mouseover", e => { const t = e.target.closest("[data-tip]"); if (t) showTip(t, e); });
+document.addEventListener("mouseout", e => { if (e.target.closest("[data-tip]")) hideTip(); });
+document.addEventListener("focusin", e => { const t = e.target.closest("[data-tip]"); if (t) showTip(t, null); });
+document.addEventListener("focusout", hideTip);
+window.addEventListener("scroll", hideTip, { passive: true });
 
 /* ---------------- ledger ---------------- */
 
