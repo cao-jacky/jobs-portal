@@ -138,6 +138,30 @@ built-in subset renderer is used.
 
 Light and dark themes both ship, following the viewer's system preference.
 
+### Insights
+
+A second view, reachable from the tab beside the ledger:
+
+- **Activity heatmap** — applications sent per day as a week-by-day grid, which
+  shows the bursts and fallow stretches a monthly chart smooths away.
+- **Rejection wall** — total rejections, the fastest and slowest no on record, how
+  many applications have gone out since the most recent interview, and the longest
+  unanswered silence.
+- **Company constellation** — every company applied to more than once, plotted on a
+  shared time axis with a dot per application coloured by outcome.
+- **Map** — applications by location, bubble area by count. It fits to wherever the
+  applications cluster and lists anything further than 200km beside the map, so one
+  distant role cannot squash the rest into a single blob. Locations with no place,
+  such as Remote, are listed rather than guessed at.
+- **Advert word cloud** — terms sized by how many adverts contain them, marked
+  rising or fading between the earlier and later half of the record, with the
+  biggest movers listed. Clicking a term filters the ledger to the adverts
+  containing it.
+- **On this day** — what happened on today's date in previous years.
+
+Moving a status to Interviewed sets off a short confetti burst, skipped when
+`prefers-reduced-motion` is set.
+
 ### Drafts
 
 Edits are kept in the browser as they are typed, so nothing is lost by closing
