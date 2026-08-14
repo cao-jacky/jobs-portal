@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jobs Portal</title>
+<style>
+  :root {
+    color-scheme: light;
+    --plane:#f9f9f7; --surface:#fcfcfb; --sunken:#f2f1ed;
+    --ink:#0b0b0b; --ink-2:#52514e; --ink-muted:#898781;
+    --hairline:#e1e0d9; --baseline:#c3c2b7;
+    --accent:#2a78d6; --accent-soft:rgba(42,120,214,.12);
+    --stage-1:#86b6ef; --stage-2:#5598e7; --stage-3:#2a78d6; --stage-4:#184f95;
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+    --good-ink:#006300; --shadow:rgba(11,11,11,.18);
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --plane:#0d0d0d; --surface:#1a1a19; --sunken:#141413;
+      --ink:#fff; --ink-2:#c3c2b7; --ink-muted:#898781;
+      --hairline:#2c2c2a; --baseline:#383835;
+      --accent:#3987e5; --accent-soft:rgba(57,135,229,.16);
+      --stage-1:#6da7ec; --stage-2:#3987e5; --stage-3:#256abf; --stage-4:#184f95;
+      --good-ink:#0ca30c; --shadow:rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --plane:#0d0d0d; --surface:#1a1a19; --sunken:#141413;
+    --ink:#fff; --ink-2:#c3c2b7; --ink-muted:#898781;
+    --hairline:#2c2c2a; --baseline:#383835;
+    --accent:#3987e5; --accent-soft:rgba(57,135,229,.16);
+    --stage-1:#6da7ec; --stage-2:#3987e5; --stage-3:#256abf; --stage-4:#184f95;
+    --good-ink:#0ca30c; --shadow:rgba(0,0,0,.6);
+  }
+
+  *,*::before,*::after { box-sizing:border-box; }
+  body { margin:0; background:var(--plane); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.5; }
+  .wrap { max-width:1220px; margin:0 auto; padding:32px 24px 72px; display:flex; flex-direction:column; gap:28px; }
+
+  .masthead { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px 20px; }
+  .masthead h1 { font-size:28px; font-weight:620; letter-spacing:-.015em; margin:0; }
+  .stamp { font-family:var(--mono); font-size:12px; color:var(--ink-muted); }
+  .stamp b { color:var(--ink-2); font-weight:500; }
+  .grow { flex:1 1 auto; }
+
+  button, .btn {
+    font-family:var(--sans); font-size:13px; cursor:pointer;
+    padding:7px 13px; border-radius:5px; border:1px solid var(--hairline);
+    background:var(--surface); color:var(--ink);
+  }
+  button:hover { border-color:var(--baseline); }
+  button:focus-visible, [tabindex]:focus-visible, a:focus-visible, input:focus-visible,
+  select:focus-visible, textarea:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:520; }
+  button.primary:hover { filter:brightness(1.08); }
+  button.primary:disabled { opacity:.5; cursor:not-allowed; filter:none; }
+  button.ghost { background:transparent; }
+
+  .panel { background:var(--surface); border:1px solid var(--hairline); border-radius:6px; padding:20px; display:flex; flex-direction:column; gap:16px; }
+  .panel > h2 { font-size:13px; font-weight:600; margin:0; }
+  .panel-note { font-size:12.5px; color:var(--ink-muted); margin:0; }
+
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(164px,1fr)); gap:1px; background:var(--hairline); border:1px solid var(--hairline); border-radius:6px; overflow:hidden; }
+  .kpi { background:var(--surface); padding:15px 17px; display:flex; flex-direction:column; gap:3px; }
+  .kpi .value { font-size:27px; font-weight:600; letter-spacing:-.02em; line-height:1.1; }
+  .kpi .label { font-family:var(--mono); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted); }
+  .kpi .sub { font-size:12px; color:var(--ink-2); }
+  .kpi .sub.alert { color:var(--critical); } .kpi .sub.ok { color:var(--good-ink); }
+
+  .attention { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; align-items:start; }
+  .stack { display:flex; flex-direction:column; gap:8px; margin:0; padding:0; list-style:none; }
+  .item { display:flex; align-items:baseline; gap:10px; padding:9px 12px; background:var(--sunken);
+          border-left:3px solid var(--baseline); border-radius:0 4px 4px 0; font-size:13.5px; cursor:pointer; text-align:left; width:100%; }
+  .item:hover { border-color:var(--baseline); filter:brightness(.98); }
+  .item.is-warning { border-left-color:var(--warning); }
+  .item.is-critical { border-left-color:var(--critical); }
+  .item.is-serious { border-left-color:var(--serious); }
+  .item .who { font-weight:560; } .item .what { color:var(--ink-2); flex:1 1 auto; }
+  .item .when { font-family:var(--mono); font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .empty { font-size:13px; color:var(--ink-muted); font-style:italic; }
+
+  .charts { display:grid; grid-template-columns:1.3fr 1fr; gap:16px; }
+  @media (max-width:900px) { .charts { grid-template-columns:1fr; } }
+  .funnel { display:flex; flex-direction:column; gap:9px; }
+  .stage { display:grid; grid-template-columns:104px 1fr 78px; align-items:center; gap:12px; }
+  .stage .name { font-size:13px; color:var(--ink-2); }
+  .track { background:var(--sunken); border-radius:4px; overflow:hidden; }
+  .stage .track { height:20px; } .stage .fill { height:100%; border-radius:0 4px 4px 0; min-width:6px; }
+  .stage .n { font-family:var(--mono); font-size:13px; font-variant-numeric:tabular-nums; text-align:right; }
+  .stage .n span { color:var(--ink-muted); font-size:11.5px; }
+  .breakdown { display:flex; flex-direction:column; gap:9px; }
+  .brow { display:grid; grid-template-columns:118px 1fr 32px; align-items:center; gap:10px; }
+  .brow .lbl { font-size:12.5px; color:var(--ink-2); display:flex; align-items:center; gap:6px; }
+  .brow .dot { width:9px; height:9px; border-radius:2px; flex:none; }
+  .brow .track { height:14px; } .brow .fill { height:100%; border-radius:0 4px 4px 0; min-width:6px; }
+  .brow .n { font-family:var(--mono); font-size:12.5px; font-variant-numeric:tabular-nums; text-align:right; }
+
+  .controls { display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { font-family:var(--mono); font-size:11px; padding:5px 10px; border-radius:999px; }
+  .chip[aria-pressed="true"] { background:var(--accent-soft); border-color:var(--accent); }
+  input[type="search"], input[type="text"], input[type="date"], input[type="url"], select, textarea {
+    font-family:var(--sans); font-size:13.5px; padding:7px 10px; border-radius:5px;
+    border:1px solid var(--hairline); background:var(--surface); color:var(--ink); width:100%;
+  }
+  input[type="search"] { min-width:200px; flex:1 1 200px; }
+  textarea { font-family:var(--mono); font-size:12.5px; line-height:1.6; resize:vertical; }
+  .readout { font-family:var(--mono); font-size:11.5px; color:var(--ink-muted); font-variant-numeric:tabular-nums; }
+
+  .scroller { overflow-x:auto; border:1px solid var(--hairline); border-radius:6px; background:var(--surface); }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; }
+  thead th { position:sticky; top:0; z-index:2; background:var(--sunken); border-bottom:1px solid var(--hairline);
+             font-family:var(--mono); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase;
+             color:var(--ink-muted); font-weight:500; text-align:left; padding:10px 12px; white-space:nowrap; }
+  thead th.sortable { cursor:pointer; user-select:none; }
+  thead th.sortable:hover { color:var(--ink); }
+  thead th .arrow { opacity:0; margin-left:4px; }
+  thead th[data-dir] .arrow { opacity:1; color:var(--accent); }
+  tbody td { border-bottom:1px solid var(--hairline); padding:9px 12px; vertical-align:top; }
+  tbody tr:last-child td { border-bottom:0; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover td, tbody tr.active td { background:var(--sunken); }
+  tbody tr.active td:first-child { box-shadow:inset 3px 0 0 var(--accent); }
+  td.num { font-family:var(--mono); font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--ink-2); }
+  td .co { font-weight:560; } td .ti { color:var(--ink-2); font-size:12.5px; }
+  td .loc { font-size:12.5px; color:var(--ink-muted); white-space:nowrap; }
+  a { color:var(--accent); text-decoration:none; } a:hover { text-decoration:underline; }
+  .flag { color:var(--critical); font-family:var(--mono); font-size:11px; }
+  .flag.warn { color:var(--serious); }
+
+  select.status {
+    font-family:var(--sans); font-size:12px; padding:3px 6px; border-radius:999px;
+    border:1px solid var(--hairline); background:var(--sunken); color:var(--ink); width:auto; min-width:132px;
+  }
+  select.status:disabled { opacity:1; }
+  .swatch { display:inline-block; width:7px; height:7px; border-radius:2px; margin-right:6px; vertical-align:middle; }
+
+  /* drawer */
+  .scrim { position:fixed; inset:0; background:rgba(11,11,11,.32); opacity:0; pointer-events:none; transition:opacity 140ms ease; z-index:30; }
+  .scrim.on { opacity:1; pointer-events:auto; }
+  .drawer {
+    position:fixed; top:0; right:0; height:100%; width:min(760px,92vw); z-index:31;
+    background:var(--surface); border-left:1px solid var(--hairline); box-shadow:-16px 0 40px var(--shadow);
+    transform:translateX(100%); transition:transform 160ms ease;
+    display:flex; flex-direction:column;
+  }
+  .drawer.on { transform:translateX(0); }
+  .drawer header { padding:18px 22px 14px; border-bottom:1px solid var(--hairline); display:flex; flex-direction:column; gap:10px; }
+  .drawer header .top { display:flex; align-items:flex-start; gap:12px; }
+  .drawer h2 { margin:0; font-size:19px; font-weight:620; letter-spacing:-.01em; }
+  .drawer .role { margin:2px 0 0; font-size:14px; color:var(--ink-2); }
+  .drawer .meta { font-family:var(--mono); font-size:11.5px; color:var(--ink-muted); display:flex; flex-wrap:wrap; gap:4px 12px; }
+  .drawer .actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .drawer .scroll { overflow-y:auto; padding:20px 22px 40px; flex:1 1 auto; }
+  .drawer footer { padding:12px 22px; border-top:1px solid var(--hairline); display:flex; gap:10px; align-items:center; }
+  .drawer footer .grow { flex:1 1 auto; }
+
+  .note-body { font-size:14.5px; }
+  .note-body h1 { font-size:20px; margin:22px 0 8px; }
+  .note-body h2 { font-size:16.5px; margin:22px 0 8px; }
+  .note-body h3 { font-size:14.5px; margin:18px 0 6px; }
+  .note-body p { margin:0 0 12px; }
+  .note-body ul, .note-body ol { margin:0 0 14px; padding-left:22px; }
+  .note-body li { margin:0 0 5px; }
+  .note-body hr { border:0; border-top:1px solid var(--hairline); margin:20px 0; }
+  .note-body code { font-family:var(--mono); font-size:12.5px; background:var(--sunken); border:1px solid var(--hairline); border-radius:3px; padding:1px 4px; }
+  .note-body pre { background:var(--sunken); border:1px solid var(--hairline); border-radius:5px; padding:12px; overflow-x:auto; }
+  .note-body pre code { background:none; border:0; padding:0; }
+  .note-body table { font-size:13px; margin-bottom:14px; }
+  .note-body th, .note-body td { border:1px solid var(--hairline); padding:6px 9px; text-align:left; }
+  .note-body blockquote { margin:0 0 14px; padding-left:14px; border-left:3px solid var(--baseline); color:var(--ink-2); }
+
+  .form { display:flex; flex-direction:column; gap:14px; }
+  .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
+  .field { display:flex; flex-direction:column; gap:5px; }
+  .field label { font-family:var(--mono); font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--ink-muted); }
+  .field.wide { grid-column:1 / -1; }
+
+  #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(12px); z-index:40;
+           background:var(--ink); color:var(--plane); font-size:13px; padding:9px 15px; border-radius:5px;
+           opacity:0; pointer-events:none; transition:opacity 130ms ease, transform 130ms ease; max-width:80vw; }
+  #toast.on { opacity:1; transform:translateX(-50%) translateY(0); }
+  #toast.bad { background:var(--critical); color:#fff; }
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .badge { font-family:var(--mono); font-size:10.5px; padding:2px 7px; border-radius:999px; border:1px solid var(--hairline); background:var(--sunken); color:var(--ink-2); }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <h1>Jobs Portal</h1>
+    <span class="stamp">watching <b id="src-count">…</b> notes in <b id="src-dir"></b></span>
+    <span class="grow"></span>
+    <span id="mode-badge" class="badge sr">read-only</span>
+    <button id="new-btn">New position</button>
+    <button id="refresh-btn" class="ghost">Refresh</button>
+  </header>
+
+  <section class="kpis" id="kpis" aria-label="Summary figures"></section>
+
+  <section class="attention" aria-label="Needs attention">
+    <div class="panel">
+      <h2>Open deadlines</h2>
+      <ul class="stack" id="deadlines"></ul>
+      <p class="panel-note">Notes still marked <em>Not applied</em> that carry a deadline.</p>
+    </div>
+    <div class="panel">
+      <h2>Ageing applications</h2>
+      <ul class="stack" id="ageing"></ul>
+      <p class="panel-note">Sent, no outcome recorded. Past 21 days silence has usually meant no.</p>
+    </div>
+  </section>
+
+  <section class="charts">
+    <div class="panel">
+      <h2>Funnel</h2>
+      <div class="funnel" id="funnel"></div>
+    </div>
+    <div class="panel">
+      <h2>Status of every note</h2>
+      <div class="breakdown" id="breakdown"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>The ledger</h2>
+    <div class="controls">
+      <label class="sr" for="q">Search company, role, or location</label>
+      <input id="q" type="search" placeholder="Search company, role, or location" autocomplete="off">
+      <div class="chips" id="status-chips" role="group" aria-label="Filter by status"></div>
+      <div class="chips" id="year-chips" role="group" aria-label="Filter by year"></div>
+      <span class="readout" id="readout"></span>
+    </div>
+    <div class="scroller">
+      <table>
+        <thead><tr>
+          <th class="sortable" data-key="company" tabindex="0" scope="col">Company &amp; role<span class="arrow">↓</span></th>
+          <th scope="col">Location</th>
+          <th scope="col">Status</th>
+          <th class="sortable" data-key="applied" tabindex="0" scope="col">Applied<span class="arrow">↓</span></th>
+          <th class="sortable" data-key="clock" tabindex="0" scope="col">Days<span class="arrow">↓</span></th>
+          <th class="sortable" data-key="deadline" tabindex="0" scope="col">Deadline<span class="arrow">↓</span></th>
+          <th scope="col">Ad</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true">
+  <header>
+    <div class="top">
+      <div class="grow">
+        <h2 id="drawer-title">…</h2>
+        <p class="role" id="drawer-role"></p>
+      </div>
+      <button id="close-btn" class="ghost" aria-label="Close">Close</button>
+    </div>
+    <div class="meta" id="drawer-meta"></div>
+    <div class="actions">
+      <button id="read-tab" class="primary">Read</button>
+      <button id="edit-tab">Edit</button>
+      <span class="grow"></span>
+      <a id="open-ad" href="#" target="_blank" rel="noopener" hidden>Open the advert</a>
+    </div>
+  </header>
+  <div class="scroll" id="drawer-scroll">
+    <div class="note-body" id="view"></div>
+    <form class="form" id="editor" hidden>
+      <div class="fields" id="editor-fields"></div>
+      <div class="field wide">
+        <label for="body">Note body (markdown)</label>
+        <textarea id="body" rows="22" spellcheck="false"></textarea>
+      </div>
+    </form>
+  </div>
+  <footer>
+    <span class="readout" id="save-state"></span>
+    <span class="grow"></span>
+    <button id="revert-btn" class="ghost" hidden>Discard changes</button>
+    <button id="save-btn" class="primary" hidden>Save note</button>
+  </footer>
+</aside>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const CONFIG = __CONFIG__;
+const TOKEN_KEY = "jobs-portal-token";
+let TOKEN = localStorage.getItem(TOKEN_KEY) || "";
+let DATA = [];
+let current = null;          // { path, frontmatter, order, body, html, mtime }
+let dirty = false;
+let editing = false;
+
+const SENT = new Set(["Applied", "Rejected", "Interviewed", "Interview Invitation", "Not eligible"]);
+const WON = new Set(["Interviewed", "Interview Invitation"]);
+const CLOSED = new Set(["Rejected", "Not eligible"]);
+const ORDER = [...CONFIG.statuses, "Unknown"];
+const TONE = {
+  "Not applied": "var(--warning)", "Applied": "var(--accent)",
+  "Interview Invitation": "var(--good)", "Interviewed": "var(--good)",
+  "Rejected": "var(--critical)", "Not eligible": "var(--serious)",
+  "Skipped": "var(--baseline)", "Unknown": "var(--ink-muted)"
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+function toast(message, bad) {
+  const el = $("toast");
+  el.textContent = message;
+  el.classList.toggle("bad", !!bad);
+  el.classList.add("on");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove("on"), bad ? 5200 : 2600);
+}
+
+async function api(path, options = {}) {
+  const headers = Object.assign({}, options.headers);
+  if (options.body) headers["Content-Type"] = "application/json";
+  if (TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+  const response = await fetch(path, Object.assign({}, options, { headers }));
+  let payload = null;
+  try { payload = await response.json(); } catch (_) { /* no body */ }
+  if (!response.ok) {
+    if (response.status === 401) {
+      const entered = prompt("This portal needs its access token:");
+      if (entered) { TOKEN = entered.trim(); localStorage.setItem(TOKEN_KEY, TOKEN); return api(path, options); }
+    }
+    throw new Error((payload && payload.error) || `${response.status} ${response.statusText}`);
+  }
+  return payload;
+}
+
+/* ---------------- summary rendering ---------------- */
+
+function fmtDeadline(row) {
+  if (row.daysToDeadline === null) return "";
+  if (row.daysToDeadline < 0) return `${Math.abs(row.daysToDeadline)}d ago`;
+  if (row.daysToDeadline === 0) return "today";
+  return `in ${row.daysToDeadline}d`;
+}
+const clockOf = row => row.daysToOutcome !== null && row.daysToOutcome >= 0 ? row.daysToOutcome
+                     : (row.daysOpen !== null ? row.daysOpen : null);
+const median = arr => arr.length ? (arr.length % 2 ? arr[(arr.length - 1) / 2]
+                     : Math.round((arr[arr.length / 2 - 1] + arr[arr.length / 2]) / 2)) : null;
+
+function renderSummary() {
+  const sent = DATA.filter(r => SENT.has(r.status) || r.applied);
+  const live = DATA.filter(r => r.status === "Applied");
+  const wins = DATA.filter(r => WON.has(r.status));
+  const resolved = DATA.filter(r => CLOSED.has(r.status) || WON.has(r.status));
+  const days = DATA.map(r => r.daysToOutcome).filter(d => d !== null && d >= 0).sort((a, b) => a - b);
+  const ageing = live.filter(r => r.daysOpen !== null && r.daysOpen > 21).sort((a, b) => b.daysOpen - a.daysOpen);
+  const openDeadlines = DATA.filter(r => r.status === "Not applied" && r.daysToDeadline !== null)
+                            .sort((a, b) => a.daysToDeadline - b.daysToDeadline);
+  const soon = openDeadlines.filter(r => r.daysToDeadline >= 0 && r.daysToDeadline <= 14);
+  const rate = sent.length ? (wins.length / sent.length * 100) : 0;
+  const resolvedRate = resolved.length ? (wins.length / resolved.length * 100) : 0;
+
+  $("src-count").textContent = DATA.length;
+  const kpi = (v, l, s, tone) => `<div class="kpi"><span class="value">${v}</span>
+    <span class="label">${l}</span>${s ? `<span class="sub${tone ? " " + tone : ""}">${s}</span>` : ""}</div>`;
+  $("kpis").innerHTML = [
+    kpi(DATA.length, "Tracked", `${DATA.filter(r => r.assessed).length} with a suitability note`),
+    kpi(sent.length, "Applications sent", `${DATA.filter(r => r.status === "Skipped").length} skipped deliberately`),
+    kpi(live.length, "Live pipeline", ageing.length ? `${ageing.length} past 21 days` : "all inside 21 days", ageing.length ? "alert" : "ok"),
+    kpi(wins.length, "Interviews", `${rate.toFixed(1)}% of sent, ${resolvedRate.toFixed(1)}% of resolved`, wins.length ? "ok" : null),
+    kpi(median(days) ?? "&ndash;", "Median days to no", days.length ? `${days[0]} fastest, ${days[days.length - 1]} slowest` : ""),
+    kpi(soon.length, "Deadlines in 14 days", soon.length ? soon[0].company + (soon.length > 1 ? ` +${soon.length - 1} more` : "") : "nothing pending", soon.length ? "alert" : null)
+  ].join("");
+
+  const itemRow = (row, tone, when) => `<li><button class="item ${tone}" data-open="${esc(row.path)}">
+      <span class="who">${esc(row.company)}</span><span class="what">${esc(row.title)}</span>
+      <span class="when">${when}</span></button></li>`;
+  $("deadlines").innerHTML = openDeadlines.length
+    ? openDeadlines.map(r => itemRow(r, r.daysToDeadline < 0 ? "is-critical" : r.daysToDeadline <= 3 ? "is-warning" : "",
+        `${r.deadline} &middot; ${fmtDeadline(r)}`)).join("")
+    : `<li class="empty">No unapplied notes carry a deadline.</li>`;
+  $("ageing").innerHTML = ageing.length
+    ? ageing.map(r => itemRow(r, r.daysOpen > 60 ? "is-critical" : "is-serious", `${r.daysOpen}d silent`)).join("")
+    : `<li class="empty">Nothing has been waiting more than 21 days.</li>`;
+
+  const stages = [
+    ["Tracked", DATA.length, "var(--stage-1)"], ["Applied", sent.length, "var(--stage-2)"],
+    ["Resolved", resolved.length, "var(--stage-3)"], ["Interviewed", wins.length, "var(--stage-4)"]
+  ];
+  $("funnel").innerHTML = stages.map(([name, n, color]) => `<div class="stage">
+      <span class="name">${name}</span>
+      <div class="track"><div class="fill" style="width:${DATA.length ? (n / DATA.length * 100).toFixed(1) : 0}%;background:${color}"></div></div>
+      <span class="n">${n}<span> / ${DATA.length}</span></span></div>`).join("");
+
+  const counts = new Map();
+  DATA.forEach(r => counts.set(r.status, (counts.get(r.status) || 0) + 1));
+  const present = ORDER.filter(s => counts.has(s));
+  const top = Math.max(1, ...present.map(s => counts.get(s)));
+  $("breakdown").innerHTML = present.map(s => `<div class="brow">
+      <span class="lbl"><span class="dot" style="background:${TONE[s]}"></span>${esc(s)}</span>
+      <div class="track"><div class="fill" style="width:${(counts.get(s) / top * 100).toFixed(1)}%;background:${TONE[s]}"></div></div>
+      <span class="n">${counts.get(s)}</span></div>`).join("");
+
+  // filter chips
+  const chip = (label, value, group) => `<button class="chip" role="switch" aria-pressed="${state[group] === value}"
+      data-group="${group}" data-value="${esc(value)}">${esc(label)}</button>`;
+  $("status-chips").innerHTML = present.map(s => chip(`${s} ${counts.get(s)}`, s, "status")).join("");
+  $("year-chips").innerHTML = [...new Set(DATA.map(r => r.year))].sort().map(y => chip(y, y, "year")).join("");
+}
+
+/* ---------------- ledger ---------------- */
+
+const state = { q:"", status:null, year:null, key:"applied", dir:"desc" };
+
+function clockCell(row) {
+  const v = clockOf(row);
+  if (v === null) return `<td class="num">&ndash;</td>`;
+  if (row.daysOpen !== null) {
+    const cls = row.daysOpen > 60 ? "flag" : row.daysOpen > 21 ? "flag warn" : "";
+    return `<td class="num"><span class="${cls}">${v} open</span></td>`;
+  }
+  return `<td class="num">${v} to no</td>`;
+}
+
+function statusSelect(row) {
+  const options = ORDER.filter(s => s !== "Unknown" || row.status === "Unknown")
+    .map(s => `<option value="${esc(s)}"${s === row.status ? " selected" : ""}>${esc(s)}</option>`).join("");
+  return `<select class="status" data-path="${esc(row.path)}" aria-label="Status for ${esc(row.company)}"
+    ${CONFIG.readOnly ? "disabled" : ""}>${options}</select>`;
+}
+
+function renderLedger() {
+  let rows = DATA.filter(r => {
+    if (state.status && r.status !== state.status) return false;
+    if (state.year && r.year !== state.year) return false;
+    if (state.q && !`${r.company} ${r.title} ${r.location}`.toLowerCase().includes(state.q)) return false;
+    return true;
+  });
+  const dir = state.dir === "asc" ? 1 : -1;
+  rows.sort((a, b) => {
+    let va, vb;
+    if (state.key === "clock") { va = clockOf(a); vb = clockOf(b); }
+    else if (state.key === "status") { va = ORDER.indexOf(a.status); vb = ORDER.indexOf(b.status); }
+    else { va = a[state.key]; vb = b[state.key]; }
+    const an = va === null || va === undefined, bn = vb === null || vb === undefined;
+    if (an && bn) return a.company.localeCompare(b.company);
+    if (an) return 1;
+    if (bn) return -1;
+    if (va === vb) return a.company.localeCompare(b.company);
+    return (va > vb ? 1 : -1) * dir;
+  });
+
+  $("rows").innerHTML = rows.map(r => {
+    const showRel = r.daysToDeadline !== null && r.status === "Not applied";
+    const relCls = r.daysToDeadline < 0 ? "flag" : r.daysToDeadline <= 3 ? "flag warn" : "";
+    return `<tr data-path="${esc(r.path)}" class="${current && current.path === r.path ? "active" : ""}">
+      <td><div class="co">${esc(r.company)}</div><div class="ti">${esc(r.title)}</div></td>
+      <td class="loc">${esc(r.location)}</td>
+      <td>${statusSelect(r)}</td>
+      <td class="num">${r.applied || "&ndash;"}</td>
+      ${clockCell(r)}
+      <td class="num">${r.deadline ? esc(r.deadline) + (showRel ? ` <span class="${relCls}">${fmtDeadline(r)}</span>` : "") : "&ndash;"}</td>
+      <td>${r.link ? `<a href="${esc(r.link)}" target="_blank" rel="noopener">ad</a>` : ""}</td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="7" class="empty" style="padding:20px 12px">Nothing matches those filters.</td></tr>`;
+  $("readout").textContent = `${rows.length} of ${DATA.length} shown`;
+}
+
+/* ---------------- drawer ---------------- */
+
+function setEditing(on) {
+  editing = on;
+  $("view").hidden = on;
+  $("editor").hidden = !on;
+  $("save-btn").hidden = !on || CONFIG.readOnly;
+  $("revert-btn").hidden = !on;
+  $("read-tab").classList.toggle("primary", !on);
+  $("edit-tab").classList.toggle("primary", on);
+  $("save-state").textContent = on && CONFIG.readOnly ? "read-only mode, saving is disabled" : "";
+}
+
+function fieldInput(key, value) {
+  const id = "f-" + key;
+  if (key === "job_status") {
+    const options = CONFIG.statuses.map(s => `<option value="${esc(s)}"${s === value ? " selected" : ""}>${esc(s)}</option>`).join("");
+    return `<div class="field"><label for="${id}">${key}</label>
+      <select id="${id}" data-field="${key}"><option value=""></option>${options}</select></div>`;
+  }
+  const type = /^(deadline|date_)/.test(key) ? "date" : key === "link" ? "url" : "text";
+  const wide = key === "link" ? " wide" : "";
+  return `<div class="field${wide}"><label for="${id}">${key}</label>
+    <input id="${id}" type="${type}" data-field="${key}" value="${esc(value ?? "")}"></div>`;
+}
+
+function markDirty() {
+  dirty = true;
+  $("save-state").textContent = "unsaved changes";
+}
+
+async function openNote(path) {
+  if (dirty && !confirm("This note has unsaved changes. Discard them?")) return;
+  try {
+    current = await api("/api/note?path=" + encodeURIComponent(path));
+  } catch (err) {
+    toast(err.message, true);
+    return;
+  }
+  dirty = false;
+  const front = current.frontmatter || {};
+  $("drawer-title").textContent = front.company || "Untitled";
+  $("drawer-role").textContent = front.job_title || "";
+  const bits = [current.path];
+  if (front.location) bits.push(front.location);
+  if (front.job_status) bits.push(front.job_status);
+  if (front.deadline) bits.push("deadline " + front.deadline);
+  $("drawer-meta").innerHTML = bits.map(b => `<span>${esc(b)}</span>`).join("");
+  const ad = $("open-ad");
+  if (front.link) { ad.href = front.link; ad.hidden = false; } else { ad.hidden = true; }
+
+  $("view").innerHTML = current.html || `<p class="empty">This note has no body yet.</p>`;
+  const keys = [...new Set([...CONFIG.fields, ...Object.keys(front)])];
+  $("editor-fields").innerHTML = keys.map(k => fieldInput(k, front[k])).join("");
+  $("body").value = current.body || "";
+  setEditing(false);
+  const hash = "#" + encodeURIComponent(current.path);
+  if (location.hash !== hash) history.replaceState(null, "", hash);
+  $("scrim").classList.add("on");
+  $("drawer").classList.add("on");
+  $("drawer").setAttribute("aria-hidden", "false");
+  $("drawer-scroll").scrollTop = 0;
+  $("close-btn").focus();
+  renderLedger();
+}
+
+function closeDrawer() {
+  if (dirty && !confirm("This note has unsaved changes. Discard them?")) return;
+  dirty = false;
+  current = null;
+  if (location.hash) history.replaceState(null, "", location.pathname);
+  $("scrim").classList.remove("on");
+  $("drawer").classList.remove("on");
+  $("drawer").setAttribute("aria-hidden", "true");
+  renderLedger();
+}
+
+async function saveNote() {
+  if (!current || CONFIG.readOnly) return;
+  const frontmatter = {};
+  $("editor-fields").querySelectorAll("[data-field]").forEach(el => { frontmatter[el.dataset.field] = el.value; });
+  $("save-btn").disabled = true;
+  $("save-state").textContent = "saving…";
+  try {
+    const result = await api("/api/note", {
+      method: "PUT",
+      body: JSON.stringify({ path: current.path, frontmatter, body: $("body").value, mtime: current.mtime })
+    });
+    dirty = false;
+    current.mtime = result.mtime;
+    const index = DATA.findIndex(r => r.path === result.row.path);
+    if (index >= 0) DATA[index] = result.row; else DATA.push(result.row);
+    renderSummary();
+    renderLedger();
+    const fresh = await api("/api/note?path=" + encodeURIComponent(current.path));
+    current = fresh;
+    $("view").innerHTML = fresh.html;
+    $("save-state").textContent = "saved";
+    toast(result.backup ? "Saved. Previous version kept in .portal-backups" : "Saved.");
+  } catch (err) {
+    $("save-state").textContent = "not saved";
+    toast(err.message, true);
+  } finally {
+    $("save-btn").disabled = false;
+  }
+}
+
+async function quickStatus(path, value) {
+  try {
+    const result = await api("/api/note", { method: "PUT", body: JSON.stringify({ path, frontmatter: { job_status: value } }) });
+    const index = DATA.findIndex(r => r.path === path);
+    if (index >= 0) DATA[index] = result.row;
+    if (current && current.path === path) current.mtime = result.mtime;
+    renderSummary();
+    renderLedger();
+    toast(`${result.row.company} set to ${value}.`);
+  } catch (err) {
+    toast(err.message, true);
+    load();
+  }
+}
+
+async function createNote() {
+  const company = prompt("Company name:");
+  if (!company) return;
+  const title = prompt("Job title:");
+  if (!title) return;
+  try {
+    const result = await api("/api/notes", {
+      method: "POST",
+      body: JSON.stringify({ frontmatter: { company, job_title: title, job_status: "Not applied" },
+                             body: "## Description\n\nPaste the advert here.\n" })
+    });
+    toast("Created " + result.created);
+    await load();
+    openNote(result.created);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+/* ---------------- wiring ---------------- */
+
+async function load() {
+  try {
+    const payload = await api("/api/positions");
+    DATA = payload.positions;
+    renderSummary();
+    renderLedger();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+document.addEventListener("click", event => {
+  const opener = event.target.closest("[data-open]");
+  if (opener) { openNote(opener.dataset.open); return; }
+  const chip = event.target.closest(".chip");
+  if (chip) {
+    const group = chip.dataset.group;
+    state[group] = state[group] === chip.dataset.value ? null : chip.dataset.value;
+    document.querySelectorAll(`.chip[data-group="${group}"]`).forEach(c =>
+      c.setAttribute("aria-pressed", String(state[group] === c.dataset.value)));
+    renderLedger();
+    return;
+  }
+  const row = event.target.closest("tbody tr[data-path]");
+  if (row && !event.target.closest("select, a")) openNote(row.dataset.path);
+});
+
+document.addEventListener("change", event => {
+  const select = event.target.closest("select.status");
+  if (select) { quickStatus(select.dataset.path, select.value); return; }
+  if (event.target.closest("#editor")) markDirty();
+});
+document.addEventListener("input", event => { if (event.target.closest("#editor")) markDirty(); });
+
+document.querySelectorAll("th.sortable").forEach(th => {
+  const act = () => {
+    state.dir = state.key === th.dataset.key && state.dir === "desc" ? "asc" : "desc";
+    state.key = th.dataset.key;
+    document.querySelectorAll("th.sortable").forEach(o => o.removeAttribute("data-dir"));
+    th.dataset.dir = state.dir;
+    th.querySelector(".arrow").textContent = state.dir === "desc" ? "↓" : "↑";
+    renderLedger();
+  };
+  th.addEventListener("click", act);
+  th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); act(); } });
+});
+
+$("q").addEventListener("input", e => { state.q = e.target.value.toLowerCase().trim(); renderLedger(); });
+$("refresh-btn").addEventListener("click", () => load().then(() => toast("Reloaded from disk.")));
+$("new-btn").addEventListener("click", createNote);
+$("close-btn").addEventListener("click", closeDrawer);
+$("scrim").addEventListener("click", closeDrawer);
+$("read-tab").addEventListener("click", () => setEditing(false));
+$("edit-tab").addEventListener("click", () => setEditing(true));
+$("save-btn").addEventListener("click", saveNote);
+$("revert-btn").addEventListener("click", () => { if (current) openNote(current.path); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && $("drawer").classList.contains("on")) closeDrawer();
+  if ((e.metaKey || e.ctrlKey) && e.key === "s" && editing) { e.preventDefault(); saveNote(); }
+});
+window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+
+$("src-dir").textContent = CONFIG.jobsDir;
+if (CONFIG.readOnly) { $("mode-badge").classList.remove("sr"); $("new-btn").disabled = true; }
+document.querySelector('th[data-key="applied"]').dataset.dir = "desc";
+load().then(() => {
+  const wanted = decodeURIComponent((location.hash || "").replace(/^#/, ""));
+  if (wanted) openNote(wanted);
+});
+window.addEventListener("hashchange", () => {
+  const wanted = decodeURIComponent((location.hash || "").replace(/^#/, ""));
+  if (wanted && (!current || current.path !== wanted)) openNote(wanted);
+});
+</script>
+</body>
+</html>

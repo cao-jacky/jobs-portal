@@ -1,0 +1,31 @@
+services:
+  jobs-portal:
+    build: .
+    image: jobs-portal:latest
+    container_name: jobs-portal
+    restart: unless-stopped
+    ports:
+      - "8412:8080"
+    volumes:
+      # The only mount that matters: the folder containing Positions/.
+      # Set JOBS_PATH in a .env file next to this one. See .env.example.
+      - ${JOBS_PATH:?set JOBS_PATH to the folder containing Positions/}:/data
+    environment:
+      JOBS_DIR: /data
+      PORT: "8080"
+      # Uncomment to require a token. The page prompts once and remembers it.
+      # AUTH_TOKEN: "change-me"
+      # Uncomment to browse without any risk of writing.
+      # READ_ONLY: "1"
+      # Set to 0 to stop keeping a copy of each note before overwriting it.
+      BACKUPS: "1"
+    # Writes land on the bind mount as this uid:gid. On a Linux host set these to
+    # the owner of the Jobs folder, otherwise new files end up owned by root.
+    # Find them with `id -u` and `id -g`.
+    # user: "1000:1000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
