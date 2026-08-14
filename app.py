@@ -25,6 +25,7 @@ import os
 import re
 import shutil
 import sys
+import unicodedata
 import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -66,6 +67,27 @@ STATUSES = [
     "Skipped",
 ]
 NULLISH = {"", "null", "none", "n/a", "tbd", "-"}
+
+# Sibling folders holding the documents written for a position. Matched by
+# normalised folder name so the accent in "Résumés" cannot break lookup.
+ARTEFACT_FOLDERS = {
+    "cover letters": "letter",
+    "coverletters": "letter",
+    "résumés": "resume",
+    "resumes": "resume",
+    "résumes": "resume",
+    "cvs": "cv",
+}
+ARTEFACT_EXTENSIONS = {".pdf", ".odt", ".docx", ".doc", ".md", ".txt", ".rtf"}
+CONTENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
+    ".md": "text/markdown; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".rtf": "application/rtf",
+}
 
 def normalise_body(text: str) -> str:
     """Flatten cosmetic indentation so pasted adverts do not become code blocks.
@@ -346,6 +368,25 @@ def relative(path: Path) -> str:
     return path.relative_to(JOBS_DIR).as_posix()
 
 
+def safe_doc_path(rel: str) -> Path:
+    """Resolve a document path, refusing anything outside the document folders."""
+    rel = (rel or "").strip().lstrip("/")
+    if not rel:
+        raise ValueError("path is required")
+    candidate = (JOBS_DIR / rel).resolve()
+    if candidate.suffix.lower() not in ARTEFACT_EXTENSIONS:
+        raise ValueError("that file type cannot be served")
+    for folder in artefact_dirs():
+        try:
+            candidate.relative_to(folder)
+        except ValueError:
+            continue
+        if not candidate.is_file():
+            raise ValueError("file not found")
+        return candidate
+    raise ValueError("path must be inside a document folder")
+
+
 def enrich(row: dict, today: datetime.date) -> dict:
     applied = parse_date(row["applied"])
     rejected = parse_date(row["rejected"])
@@ -357,12 +398,71 @@ def enrich(row: dict, today: datetime.date) -> dict:
     return row
 
 
-def row_for(path: Path, today: datetime.date) -> dict:
+def fold(text: str) -> str:
+    return unicodedata.normalize("NFC", text).casefold().strip()
+
+
+def artefact_dirs() -> dict[Path, str]:
+    """Locate the document folders that sit beside Positions/."""
+    found: dict[Path, str] = {}
+    try:
+        for child in JOBS_DIR.iterdir():
+            if child.is_dir():
+                kind = ARTEFACT_FOLDERS.get(fold(child.name))
+                if kind:
+                    found[child] = kind
+    except OSError:
+        pass
+    return found
+
+
+def artefact_index() -> dict[str, list[dict]]:
+    """Map a note's filename stem to the documents written for that position.
+
+    Two naming conventions are in use, `Company - Title.pdf` and
+    `Cover Letter - Company - Title.pdf`, so a stem matches when it equals the
+    note's stem or ends with it.
+    """
+    index: dict[str, list[dict]] = {}
+    for folder, kind in artefact_dirs().items():
+        for path in folder.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in ARTEFACT_EXTENSIONS:
+                continue
+            if path.name.startswith((".", "~")):
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            index.setdefault(fold(path.stem), []).append({
+                "kind": kind,
+                "path": relative(path),
+                "name": path.name,
+                "ext": path.suffix.lower().lstrip("."),
+                "bytes": stat.st_size,
+                "mtime": stat.st_mtime,
+            })
+    return index
+
+
+def docs_for(stem: str, index: dict[str, list[dict]]) -> list[dict]:
+    key = fold(stem)
+    out: list[dict] = []
+    for candidate, entries in index.items():
+        if candidate == key or candidate.endswith(key):
+            out.extend(entries)
+    out.sort(key=lambda d: (d["kind"], d["ext"] != "pdf", d["name"]))
+    return out
+
+
+def row_for(path: Path, today: datetime.date, index: dict[str, list[dict]] | None = None) -> dict:
     text = path.read_text(encoding="utf-8", errors="replace")
     front, _order, body = split_note(text)
+    docs = docs_for(path.stem, index if index is not None else artefact_index())
     return enrich(
         {
             "path": relative(path),
+            "docs": docs,
             "company": front.get("company") or "Unknown",
             "title": front.get("job_title") or "Unknown",
             "location": front.get("location") or "Unknown",
@@ -381,11 +481,12 @@ def row_for(path: Path, today: datetime.date) -> dict:
 
 def list_notes() -> list[dict]:
     today = datetime.date.today()
+    index = artefact_index()
     rows = []
     if POSITIONS_DIR.is_dir():
         for path in sorted(POSITIONS_DIR.rglob("*.md")):
             try:
-                rows.append(row_for(path, today))
+                rows.append(row_for(path, today, index))
             except OSError as exc:
                 print(f"skipping {path}: {exc}", file=sys.stderr)
     rows.sort(key=lambda r: (r["applied"] or r["deadline"] or "0000", r["company"]), reverse=True)
@@ -495,6 +596,25 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/positions":
             self._json({"positions": list_notes(), "today": datetime.date.today().isoformat()})
             return
+        if route == "/api/file":
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                doc = safe_doc_path(query.get("path", [""])[0])
+            except ValueError as exc:
+                self._error(HTTPStatus.BAD_REQUEST, str(exc))
+                return
+            payload = doc.read_bytes()
+            disposition = "inline" if doc.suffix.lower() == ".pdf" else "attachment"
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", CONTENT_TYPES.get(doc.suffix.lower(), "application/octet-stream"))
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Content-Disposition",
+                             f'{disposition}; filename="{doc.name}"'.encode("ascii", "replace").decode())
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(payload)
+            return
         if route == "/api/note":
             query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try:
@@ -513,6 +633,7 @@ class Handler(BaseHTTPRequestHandler):
                 "order": order,
                 "body": body.lstrip("\n"),
                 "html": render_markdown(body),
+                "docs": docs_for(path.stem, artefact_index()),
                 "mtime": path.stat().st_mtime,
             })
             return
@@ -560,6 +681,7 @@ class Handler(BaseHTTPRequestHandler):
                     edits[key] = str(value) if value is not None else ""
 
         _front, _order, current_body = split_note(existing)
+
         new_body = payload["body"] if isinstance(payload.get("body"), str) else None
         if new_body is not None and new_body.strip() == current_body.strip():
             new_body = None                      # body untouched, leave those bytes alone

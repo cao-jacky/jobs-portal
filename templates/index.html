@@ -196,6 +196,15 @@
   .note-body th, .note-body td { border:1px solid var(--hairline); padding:6px 9px; text-align:left; }
   .note-body blockquote { margin:0 0 14px; padding-left:14px; border-left:3px solid var(--baseline); color:var(--ink-2); }
 
+  .links { display:flex; gap:5px; flex-wrap:wrap; font-family:var(--mono); font-size:10.5px; }
+  .doc { display:inline-block; padding:2px 7px; border-radius:4px; text-decoration:none; white-space:nowrap;
+         border:1px solid var(--hairline); background:var(--sunken); color:var(--ink-2); }
+  .doc:hover { border-color:var(--accent); color:var(--accent); text-decoration:none; }
+  .doc.ad { border-style:dashed; }
+  .drawer .docs { display:flex; gap:6px; flex-wrap:wrap; }
+  .item .ready { font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:999px;
+                 border:1px solid var(--good); color:var(--good-ink); white-space:nowrap; margin-right:6px; }
+
   .form { display:flex; flex-direction:column; gap:14px; }
   .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
   .field { display:flex; flex-direction:column; gap:5px; }
@@ -282,7 +291,7 @@
           <th class="sortable" data-key="applied" tabindex="0" scope="col">Applied<span class="arrow">↓</span></th>
           <th class="sortable" data-key="clock" tabindex="0" scope="col">Days<span class="arrow">↓</span></th>
           <th class="sortable" data-key="deadline" tabindex="0" scope="col">Deadline<span class="arrow">↓</span></th>
-          <th scope="col">Ad</th>
+          <th scope="col">Documents</th>
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>
@@ -301,6 +310,7 @@
       <button id="close-btn" class="ghost" aria-label="Close">Close</button>
     </div>
     <div class="meta" id="drawer-meta"></div>
+    <div class="docs links" id="drawer-docs"></div>
     <div class="actions">
       <button id="read-tab" class="primary">Read</button>
       <button id="edit-tab">Edit</button>
@@ -462,7 +472,7 @@ function renderSummary() {
       <span class="when">${when}</span></button></li>`;
   $("deadlines").innerHTML = openDeadlines.length
     ? openDeadlines.map(r => itemRow(r, r.daysToDeadline < 0 ? "is-critical" : r.daysToDeadline <= 3 ? "is-warning" : "",
-        `${r.deadline} &middot; ${fmtDeadline(r)}`)).join("")
+        `${bestDoc(r.docs || [], "letter") ? '<span class="ready">letter ready</span> ' : ""}${r.deadline} &middot; ${fmtDeadline(r)}`)).join("")
     : `<li class="empty">No unapplied notes carry a deadline.</li>`;
   $("ageing").innerHTML = ageing.length
     ? ageing.map(r => itemRow(r, r.daysOpen > 60 ? "is-critical" : "is-serious", `${r.daysOpen}d silent`)).join("")
@@ -537,6 +547,27 @@ window.addEventListener("scroll", hideTip, { passive: true });
 
 const state = { q:"", status:null, year:null, key:"applied", dir:"desc" };
 
+const KIND_LABEL = { letter: "letter", resume: "CV", cv: "CV" };
+
+function bestDoc(docs, kind) {
+  const matching = docs.filter(d => d.kind === kind);
+  return matching.find(d => d.ext === "pdf") || matching[0] || null;
+}
+
+function docPills(row) {
+  const docs = row.docs || [];
+  const pills = [];
+  if (row.link) pills.push(`<a class="doc ad" href="${esc(row.link)}" target="_blank" rel="noopener" title="the original advert">ad</a>`);
+  ["letter", "resume", "cv"].forEach(kind => {
+    const doc = bestDoc(docs, kind);
+    if (!doc) return;
+    const all = docs.filter(d => d.kind === kind).map(d => d.name).join("\n");
+    pills.push(`<a class="doc" href="/api/file?path=${encodeURIComponent(doc.path)}" target="_blank"
+      rel="noopener" title="${esc(all)}">${KIND_LABEL[kind]}${doc.ext === "pdf" ? "" : " " + doc.ext}</a>`);
+  });
+  return pills.join("");
+}
+
 function clockCell(row) {
   const v = clockOf(row);
   if (v === null) return `<td class="num">&ndash;</td>`;
@@ -589,7 +620,7 @@ function renderLedger() {
       <td class="num">${r.applied || "&ndash;"}</td>
       ${clockCell(r)}
       <td class="num">${r.deadline ? esc(r.deadline) + (showRel ? ` <span class="${relCls}">${fmtDeadline(r)}</span>` : "") : "&ndash;"}</td>
-      <td>${r.link ? `<a href="${esc(r.link)}" target="_blank" rel="noopener">ad</a>` : ""}</td>
+      <td><span class="links">${docPills(r)}</span></td>
     </tr>`;
   }).join("") || `<tr><td colspan="7" class="empty" style="padding:20px 12px">Nothing matches those filters.</td></tr>`;
   $("readout").textContent = `${rows.length} of ${DATA.length} shown`;
@@ -702,6 +733,11 @@ async function openNote(path) {
   $("drawer-meta").innerHTML = bits.map(b => `<span>${esc(b)}</span>`).join("");
   const ad = $("open-ad");
   if (front.link) { ad.href = front.link; ad.hidden = false; } else { ad.hidden = true; }
+  const docs = current.docs || [];
+  $("drawer-docs").innerHTML = docs.length
+    ? docs.map(d => `<a class="doc" href="/api/file?path=${encodeURIComponent(d.path)}" target="_blank" rel="noopener"
+        title="${esc(d.path)} · ${Math.round(d.bytes / 1024)} kB">${esc(KIND_LABEL[d.kind] || d.kind)} ${esc(d.ext)}</a>`).join("")
+    : `<span style="color:var(--ink-muted)">no letter or CV filed for this position yet</span>`;
 
   $("view").innerHTML = current.html || `<p class="empty">This note has no body yet.</p>`;
   const keys = [...new Set([...CONFIG.fields, ...Object.keys(front)])];

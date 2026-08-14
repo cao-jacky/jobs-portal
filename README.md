@@ -131,6 +131,10 @@ built-in subset renderer is used.
   without reading the status column.
 - **Charts** cover the funnel, applications sent per month, and the status
   breakdown. Bars and rows report their exact figures on hover or keyboard focus.
+- **Documents** written for a position are matched automatically and linked from
+  both the ledger and the panel, so a note shows at a glance whether its letter or
+  CV exists. A deadline that already has a letter written is flagged `letter
+  ready`.
 
 Light and dark themes both ship, following the viewer's system preference.
 
@@ -152,6 +156,26 @@ the panel, navigating away, or reloading before saving:
 
 Drafts are a convenience and never a requirement: if `localStorage` is
 unavailable, editing still works and only the stashing is skipped.
+
+## Matching documents to notes
+
+Folders beside `Positions/` holding the documents written for each application are
+picked up automatically: `Cover Letters/`, `Résumés/`, and `CVs/`. Folder names are
+matched after Unicode normalisation, so the accent in `Résumés` cannot break
+lookup on a filesystem that stores it decomposed.
+
+A file belongs to a note when its stem equals the note's stem or ends with it,
+which covers both conventions in common use:
+
+```
+Positions/2026/Example Oy - AI Engineer.md
+Cover Letters/2026/Example Oy - AI Engineer.pdf          → matched
+Résumés/2026/Resume - Example Oy - AI Engineer.pdf       → matched
+```
+
+`GET /api/file?path=…` serves them, confined to those folders and to document
+extensions, with PDFs shown inline and everything else downloaded. Notes
+themselves are not servable through it.
 
 ## How writing works
 
