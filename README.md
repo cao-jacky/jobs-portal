@@ -92,14 +92,36 @@ built-in subset renderer is used.
   first.
 - **The status dropdown in the table** saves immediately, so moving something to
   Applied is one click.
-- **New position** creates `Positions/<year>/<Company> - <Title>.md` with the
-  standard frontmatter and an empty description.
+- **New position** opens the same panel as a form: every frontmatter field, a
+  year-folder select, and a body textarea to paste the advert into. The file is
+  named `Positions/<year>/<Company> - <Title>.md` from the company and title.
 - **Deep links**: the open note is reflected in the URL hash, so notes can be
   bookmarked and the back button works.
 - **Summary panels** list deadlines still unapplied and applications that have
   gone quiet for more than 21 days. Both are clickable.
+- **Each row leads with a status colour dot**, so the ledger can be scanned
+  without reading the status column.
 
 Light and dark themes both ship, following the viewer's system preference.
+
+### Drafts
+
+Edits are kept in the browser as they are typed, so nothing is lost by closing
+the panel, navigating away, or reloading before saving:
+
+- Every change is stashed in `localStorage` shortly after each keystroke, keyed by
+  note path, and restored when the note is reopened. A banner reports the draft's
+  age and offers to discard it.
+- The draft is cleared only once the file has actually been written.
+- Rows holding a draft are marked with a hollow ring in the ledger, so unsaved
+  work is visible without opening each note.
+- If the file changed on disk while a draft was held, the banner says so before
+  anything is overwritten.
+- Drafts cover the new-position form too, so a pasted advert survives a reload
+  before the note exists.
+
+Drafts are a convenience and never a requirement: if `localStorage` is
+unavailable, editing still works and only the stashing is skipped.
 
 ## How writing works
 
