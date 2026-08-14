@@ -1,123 +1,165 @@
 # Jobs Portal
 
-A small web service over the `Jobs/` notes folder. Same ledger as the static
-dashboard, plus an inline viewer for each note and an editor that writes back to
-the original markdown file. Built to run in Docker on the home lab with the notes
-folder bind-mounted in.
+A small self-hosted web service for tracking job applications kept as markdown
+files. It reads a folder of notes with YAML frontmatter, shows them as a
+filterable ledger with summary metrics, renders each note inline, and writes
+edits back to the original file.
 
-The notes stay the source of truth. There is no database, no index, and no copy
-of the data. Every request reads the files, and every save rewrites the file.
+The files stay the source of truth. There is no database, no index, and no second
+copy of the data, so the notes remain editable in any text editor or markdown
+app at the same time.
+
+## Why it exists
+
+Plain markdown notes are a good way to track a job search, but a folder of them
+answers questions badly: what is still open, what has gone quiet, which deadline
+lands next. Note-based database plugins solve this inside a specific editor. This
+does it over HTTP instead, so the same view works from any device on the network
+without that editor installed.
+
+## Expected layout
+
+```
+<JOBS_DIR>/
+  Positions/
+    2025/
+      Company - Job Title.md
+    2026/
+      Another Company - Another Title.md
+```
+
+Each note starts with frontmatter. Unknown keys are preserved and displayed, so
+the schema can be extended freely:
+
+```markdown
+---
+job_title: AI Engineer
+company: Example Oy
+location: Helsinki
+deadline: 2026-08-31
+job_status: Applied
+date_applied: 2026-08-14
+date_rejected:
+link: https://example.com/jobs/1
+---
+## Description
+
+The advert text.
+```
+
+`job_status` drives the metrics. The recognised values are `Not applied`,
+`Applied`, `Interview Invitation`, `Interviewed`, `Rejected`, `Not eligible`, and
+`Skipped`.
 
 ## Running it
 
 ### Docker Compose
 
-Edit the volume line in `docker-compose.yml` so the left side points at the folder
-that contains `Positions/`, then:
-
 ```
+cp .env.example .env      # then set JOBS_PATH to the folder containing Positions/
 docker compose up -d --build
 ```
 
-It listens on <http://localhost:8412> by default.
+Listens on <http://localhost:8412>.
 
 ### Directly
 
 ```
-JOBS_DIR="/path/to/Jobs" python3 app.py
+JOBS_DIR="/path/to/notes" python3 app.py
 ```
 
-Python 3.11 or newer, no virtualenv needed. `pip install markdown` is optional
-and improves note rendering; without it a built-in subset renderer is used.
+Python 3.11 or newer. No virtualenv required and no dependencies are needed:
+`pip install markdown` is optional and improves note rendering, and without it a
+built-in subset renderer is used.
 
 ## Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `JOBS_DIR` | `.` | Folder containing `Positions/`. In the image this is `/data`. |
-| `PORT` | `8080` | Listen port inside the container. |
+| `JOBS_DIR` | `.` | Folder containing `Positions/`. `/data` in the image. |
+| `PORT` | `8080` | Listen port. |
 | `HOST` | `0.0.0.0` | Bind address. |
-| `AUTH_TOKEN` | unset | When set, every request needs it as a `Bearer` token. The page prompts once and stores it in `localStorage`. `/healthz` stays open so the Docker healthcheck works. |
-| `READ_ONLY` | unset | Set to `1` to refuse every write. The page hides the save controls and shows a read-only badge. |
-| `BACKUPS` | `1` | Copy a note into `.portal-backups/` before overwriting it. Set to `0` to stop. |
+| `AUTH_TOKEN` | unset | When set, every request needs it as a `Bearer` token or `?token=`. The page prompts once and stores it in `localStorage`. `/healthz` stays open so container healthchecks still work. |
+| `READ_ONLY` | unset | Set to `1` to refuse all writes. The UI hides its save controls. |
+| `BACKUPS` | `1` | Copy a note into `.portal-backups/` before overwriting. Set to `0` to disable. |
 
 ## Using it
 
-- **Click any row** to open the note. The advert renders inline; the drawer header
-  carries the path, location, status, and deadline.
-- **Edit tab** exposes every frontmatter field plus the note body. `Cmd/Ctrl+S`
-  saves, `Esc` closes, and the tab warns before discarding unsaved changes.
-- **The status dropdown in the table** writes immediately, so marking something
-  Applied is one click and does not need the drawer.
+- **Click a row** to open the note, with the advert rendered inline and the path,
+  location, status, and deadline in the header.
+- **The Edit tab** exposes every frontmatter field plus the raw body.
+  `Cmd/Ctrl+S` saves, `Esc` closes, and navigating away from unsaved changes warns
+  first.
+- **The status dropdown in the table** saves immediately, so moving something to
+  Applied is one click.
 - **New position** creates `Positions/<year>/<Company> - <Title>.md` with the
-  standard frontmatter and an empty Description, ready for a pasted advert.
-- **Deep links**: the open note is in the URL hash, so a note can be bookmarked
-  or shared, and the back button works.
-- **Open deadlines** and **ageing applications** are clickable and jump to the note.
+  standard frontmatter and an empty description.
+- **Deep links**: the open note is reflected in the URL hash, so notes can be
+  bookmarked and the back button works.
+- **Summary panels** list deadlines still unapplied and applications that have
+  gone quiet for more than 21 days. Both are clickable.
 
-## How writing works, and why it is careful
+Light and dark themes both ship, following the viewer's system preference.
 
-Editing real notes in place is the risky part of this service, so writes are
+## How writing works
+
+Editing files in place is the risky part of a tool like this, so writes are
 surgical rather than regenerative:
 
 - Only fields whose value actually changed are rewritten. Everything else keeps
-  its original bytes, including key casing (`Location:` stays `Location:`) and
-  literal values like `deadline: null`.
-- Values wrapped across several lines are tracked as one field, so a long
-  `job_title` with a continuation line is not truncated.
-- The body is only rewritten if it actually differs, so opening and saving a note
-  without touching the body leaves it byte-identical.
-- A save that changes nothing is detected and skipped, and the response says
-  `"unchanged": true`.
-- Every write goes to a temporary file and is then atomically renamed, so an
+  its original bytes, including key casing (`Location:` is not normalised to
+  `location:`) and literal values such as `deadline: null`.
+- Frontmatter values wrapped across several lines are tracked as a single field,
+  so a long title with a continuation line is never truncated.
+- The body is rewritten only when it differs, so opening a note and saving it
+  without touching the body leaves the file byte-identical.
+- A save that would change nothing is detected and skipped, and the response
+  reports `"unchanged": true`.
+- Writes go to a temporary file and are then atomically renamed, so an
   interrupted save cannot truncate a note.
-- A copy of the previous version is kept under `.portal-backups/` mirroring the
-  original path, with a timestamp in the filename.
-- If the note changed on disk after it was opened, saving returns `409` and asks
-  for a reload rather than overwriting whatever changed. Editing the same note in
-  Obsidian at the same time is therefore safe.
+- The previous version is copied into `.portal-backups/`, mirroring the original
+  path with a timestamp in the filename.
+- If a note changed on disk after it was opened, saving returns `409` and asks for
+  a reload instead of overwriting, so editing the same note in another
+  application at the same time is safe.
 
-This was verified by round-tripping all 103 notes through read-then-save and
-confirming every file was byte-identical afterwards.
+These properties are covered by a round-trip test: read every note through the
+API, save it back unmodified, and assert that every file is byte-identical
+afterwards. It found four real bugs when it was first run, including one case of
+dropped data.
 
-Indentation in note bodies is flattened before rendering, because adverts pasted
-from a browser usually arrive with four-space-indented bullets that markdown
-would otherwise show as code blocks. Fenced blocks are left alone. This affects
-rendering only, never the stored file.
+Body indentation is flattened before rendering, because adverts pasted from a
+browser commonly arrive with four-space-indented bullets that markdown would
+otherwise render as code blocks. Fenced code blocks are left as written. This
+affects rendering only and never the stored file.
 
 ## API
 
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/` | The page. |
-| `GET` | `/healthz` | Unauthenticated liveness, note count, renderer in use. |
-| `GET` | `/api/positions` | Every note as JSON with derived date arithmetic. |
+| `GET` | `/healthz` | Unauthenticated liveness, note count, active renderer. |
+| `GET` | `/api/positions` | All notes as JSON, with derived date arithmetic. |
 | `GET` | `/api/note?path=Positions/…md` | One note: frontmatter, raw body, rendered HTML, mtime. |
-| `PUT` | `/api/note` | Save. Body: `{path, frontmatter?, body?, mtime?}`. Send `mtime` to get conflict detection. |
-| `POST` | `/api/notes` | Create. Body: `{frontmatter:{company, job_title, …}, body?, year?}`. |
+| `PUT` | `/api/note` | Save. `{path, frontmatter?, body?, mtime?}`. Passing `mtime` enables conflict detection. |
+| `POST` | `/api/notes` | Create. `{frontmatter:{company, job_title, …}, body?, year?}`. |
 
-Paths are resolved and rejected unless they land inside `Positions/` and end in
-`.md`, so `../../etc/passwd` and `Positions/../PROFILE.md` both fail.
+Client-supplied paths are resolved and rejected unless they land inside
+`Positions/` and end in `.md`, so traversal attempts such as `../../etc/passwd`
+and `Positions/../secrets.md` both fail.
 
-## Deploying on the home lab
+## Deployment notes
 
-Two things to get right:
+- **File ownership.** The container writes as whatever uid it runs as. On Linux,
+  set `user: "<uid>:<gid>"` in the compose file to the owner of the notes folder,
+  or new files and backups end up owned by root.
+- **Exposure.** There is no TLS and no user accounts, only the optional shared
+  token. Anything that can reach the port can rewrite the notes, so keep it on a
+  trusted network or behind a reverse proxy, and set `AUTH_TOKEN` if it is
+  reachable from anywhere else.
+- **Sync tools.** If the folder is replicated by a file-sync tool, consider adding
+  `.portal-backups` to its ignore rules.
 
-1. **File ownership.** The container writes as whatever uid it runs as. On a Linux
-   host, uncomment `user: "1000:1000"` in the compose file and set it to the owner
-   of the notes folder (`id -u`, `id -g`), otherwise new files and backups end up
-   owned by root and Obsidian or Syncthing may struggle with them.
-2. **Exposure.** There is no HTTPS and no login beyond the optional shared token.
-   Keep it on the LAN or behind the existing reverse proxy and VPN, and set
-   `AUTH_TOKEN` if it is reachable from anywhere but the local machine. Anything
-   that can reach this port can rewrite the notes.
+## Licence
 
-If Syncthing is also syncing the folder, add `.portal-backups` to its ignore
-patterns unless the backups are wanted on every device.
-
-## Relationship to the static dashboard
-
-`Jobs/build_dashboard.py` still works and still produces a single self-contained
-`dashboard.html` with no server. Keep it for an offline snapshot. The portal is
-the live, writable version of the same view; the two share the design tokens and
-the derived metrics but not any code.
+MIT. See [LICENSE](LICENSE).
