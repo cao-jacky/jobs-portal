@@ -82,11 +82,13 @@ Two things to know:
   `jobs-portal:latest` fails with `pull access denied … repository does not
   exist`. That is why this compose file references the GHCR image and carries no
   `build:` section.
-- **A GHCR package is private by default, even when its repository is public.**
-  After the first publish, open the package page on GitHub and either set its
-  visibility to public, or run `docker login ghcr.io` on the Docker host with a
-  personal access token that has `read:packages`. Without one of those,
-  Portainer's pull fails with the same access-denied error.
+- If the pull is denied for `ghcr.io/...` rather than Docker Hub, the package
+  visibility is the thing to check: GHCR packages can be private even when their
+  repository is public. Either set the package to public on its GitHub page, or
+  run `docker login ghcr.io` on the Docker host with a token holding
+  `read:packages`. Verify from the host with
+  `docker manifest inspect ghcr.io/cao-jacky/jobs-portal:latest`, which succeeds
+  anonymously when the package is public.
 
 ### Directly
 
