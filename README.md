@@ -88,8 +88,8 @@ built-in subset renderer is used.
 - **Click a row** to open the note, with the advert rendered inline and the path,
   location, status, and deadline in the header.
 - **The Edit tab** exposes every frontmatter field plus the raw body.
-  `Cmd/Ctrl+S` saves, `Esc` closes, and navigating away from unsaved changes warns
-  first.
+  `Cmd/Ctrl+S` saves and `Esc` closes. Unsaved changes are kept as a draft rather
+  than warned about, so closing never loses work.
 - **The status dropdown in the table** saves immediately, so moving something to
   Applied is one click.
 - **New position** opens the same panel as a form: every frontmatter field, a
