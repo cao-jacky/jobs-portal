@@ -96,6 +96,10 @@
   .stage .track { height:20px; } .stage .fill { height:100%; border-radius:0 4px 4px 0; min-width:6px; }
   .stage .n { font-family:var(--mono); font-size:13px; font-variant-numeric:tabular-nums; text-align:right; }
   .stage .n span { color:var(--ink-muted); font-size:11.5px; }
+  .sent-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .sent-head .chips { margin-left:auto; }
+  .sent-scroll { overflow-x:auto; min-width:0; }
+  .sent-inner { min-width:100%; }
   .bars { display:flex; align-items:flex-end; gap:3px; height:132px; border-bottom:1px solid var(--baseline); padding-top:4px; }
   .bar-col { flex:1 1 0; display:flex; flex-direction:column; justify-content:flex-end; height:100%; min-width:0; cursor:default; }
   .bar { background:var(--accent); border-radius:4px 4px 0 0; min-height:2px; transition:filter 120ms ease; }
@@ -360,9 +364,19 @@
 
   <section class="charts">
     <div class="panel">
-      <h2>Applications sent by month</h2>
-      <div class="bars" id="months" role="img" aria-label="Applications sent per month"></div>
-      <div class="bar-axis" id="months-axis" aria-hidden="true"></div>
+      <div class="sent-head">
+        <h2 id="sent-title">Applications sent by month</h2>
+        <div class="chips" role="group" aria-label="Histogram granularity">
+          <button class="chip" id="by-month" role="switch" aria-pressed="true">by month</button>
+          <button class="chip" id="by-day" role="switch" aria-pressed="false">by day</button>
+        </div>
+      </div>
+      <div class="sent-scroll">
+        <div class="sent-inner">
+          <div class="bars" id="months" role="img" aria-label="Applications sent per month"></div>
+          <div class="bar-axis" id="months-axis" aria-hidden="true"></div>
+        </div>
+      </div>
     </div>
     <div class="panel">
       <h2>Status of every note</h2>
@@ -651,24 +665,7 @@ function renderSummary() {
       <div class="track"><div class="fill" style="width:${DATA.length ? (n / DATA.length * 100).toFixed(1) : 0}%;background:${color}"></div></div>
       <span class="n">${n}<span> / ${DATA.length}</span></span></div>`).join("");
 
-  const byMonth = new Map();
-  sent.forEach(r => { if (r.appliedMonth) byMonth.set(r.appliedMonth, (byMonth.get(r.appliedMonth) || 0) + 1); });
-  const months = [...byMonth.keys()].sort();
-  const series = [];
-  if (months.length) {
-    const [y0, m0] = months[0].split("-").map(Number);
-    const [y1, m1] = months[months.length - 1].split("-").map(Number);
-    for (let y = y0, m = m0; y < y1 || (y === y1 && m <= m1); m === 12 ? (m = 1, y++) : m++) {
-      const key = `${y}-${String(m).padStart(2, "0")}`;
-      series.push({ key, n: byMonth.get(key) || 0 });
-    }
-  }
-  const peak = Math.max(1, ...series.map(v => v.n));
-  $("months").innerHTML = series.map(v => `<div class="bar-col" tabindex="0"
-      data-tip="${v.key} &middot; ${v.n} sent" aria-label="${v.key}: ${v.n} applications sent">
-      <div class="bar" style="height:${v.n ? Math.max(4, v.n / peak * 100) : 0}%"></div></div>`).join("");
-  $("months-axis").innerHTML = series.map((v, i) =>
-    `<span>${i === 0 || i === series.length - 1 || v.key.endsWith("-01") ? v.key.slice(2) : ""}</span>`).join("");
+  renderSent(sent);
 
   const counts = new Map();
   DATA.forEach(r => counts.set(r.status, (counts.get(r.status) || 0) + 1));
@@ -758,6 +755,74 @@ function renderOnThisDay() {
 function leadDays(row) {
   if (!row.added || !row.applied) return null;
   return Math.round((new Date(row.applied + "T00:00:00") - new Date(row.added + "T00:00:00")) / 86400000);
+}
+
+const SENT_BY_KEY = "jobs-portal-sent-by";
+let sentBy = (() => {
+  try { return localStorage.getItem(SENT_BY_KEY) === "day" ? "day" : "month"; }
+  catch (_) { return "month"; }
+})();
+
+function monthSeries(sent) {
+  const counts = new Map();
+  sent.forEach(r => { if (r.appliedMonth) counts.set(r.appliedMonth, (counts.get(r.appliedMonth) || 0) + 1); });
+  const keys = [...counts.keys()].sort();
+  const out = [];
+  if (keys.length) {
+    const [y0, m0] = keys[0].split("-").map(Number);
+    const [y1, m1] = keys[keys.length - 1].split("-").map(Number);
+    for (let y = y0, m = m0; y < y1 || (y === y1 && m <= m1); m === 12 ? (m = 1, y++) : m++) {
+      const key = `${y}-${String(m).padStart(2, "0")}`;
+      out.push({ key, n: counts.get(key) || 0, label: key.slice(2), major: key.endsWith("-01") });
+    }
+  }
+  return out;
+}
+
+function daySeries(sent) {
+  const counts = new Map();
+  sent.forEach(r => { if (r.applied) counts.set(r.applied, (counts.get(r.applied) || 0) + 1); });
+  const keys = [...counts.keys()].sort();
+  const out = [];
+  if (!keys.length) return out;
+  const cursor = new Date(keys[0] + "T00:00:00");
+  const last = new Date(keys[keys.length - 1] + "T00:00:00");
+  while (cursor <= last) {
+    const key = isoDay(cursor);
+    out.push({ key, n: counts.get(key) || 0, label: key.slice(0, 7).slice(2),
+               major: key.endsWith("-01") });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return out;
+}
+
+function renderSent(sent) {
+  const byDay = sentBy === "day";
+  const series = byDay ? daySeries(sent) : monthSeries(sent);
+  const peak = Math.max(1, ...series.map(v => v.n));
+  const unit = byDay ? "day" : "month";
+  $("sent-title").textContent = `Applications sent by ${unit}`;
+  $("by-month").setAttribute("aria-pressed", String(!byDay));
+  $("by-day").setAttribute("aria-pressed", String(byDay));
+  $("months").setAttribute("aria-label", `Applications sent per ${unit}`);
+  // a day view needs room to breathe, so give each bar a floor width and let it scroll
+  $("months").style.minWidth = byDay ? `${series.length * 6}px` : "";
+  $("months-axis").style.minWidth = byDay ? `${series.length * 6}px` : "";
+  $("months").innerHTML = series.map(v => `<div class="bar-col" tabindex="0"
+      data-tip="${v.key} &middot; ${v.n} sent" aria-label="${v.key}: ${v.n} applications sent">
+      <div class="bar" style="height:${v.n ? Math.max(4, v.n / peak * 100) : 0}%"></div></div>`).join("");
+  $("months-axis").innerHTML = series.map((v, i) => {
+    const show = byDay ? v.major : (i === 0 || i === series.length - 1 || v.major);
+    return `<span>${show ? v.label : ""}</span>`;
+  }).join("");
+  const scroller = document.querySelector(".sent-scroll");
+  if (scroller && byDay) scroller.scrollLeft = scroller.scrollWidth;
+}
+
+function setSentBy(next) {
+  sentBy = next;
+  try { localStorage.setItem(SENT_BY_KEY, next); } catch (_) {}
+  renderSummary();
 }
 
 function renderWall() {
@@ -944,6 +1009,8 @@ function showView(which) {
   $("tab-insights").setAttribute("aria-selected", String(insightsOn));
   if (insightsOn) renderInsights();
 }
+$("by-month").addEventListener("click", () => setSentBy("month"));
+$("by-day").addEventListener("click", () => setSentBy("day"));
 $("tab-ledger").addEventListener("click", () => showView("ledger"));
 $("tab-insights").addEventListener("click", () => showView("insights"));
 
