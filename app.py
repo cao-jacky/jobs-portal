@@ -57,6 +57,7 @@ FIELD_ORDER = [
     "location",
     "deadline",
     "job_status",
+    "date_added",
     "date_applied",
     "date_rejected",
     "link",
@@ -471,6 +472,7 @@ def row_for(path: Path, today: datetime.date, index: dict[str, list[dict]] | Non
             "title": front.get("job_title") or "Unknown",
             "location": front.get("location") or "Unknown",
             "status": front.get("job_status") or "Unknown",
+            "added": front.get("date_added"),
             "applied": front.get("date_applied"),
             "rejected": front.get("date_rejected"),
             "deadline": front.get("deadline"),
@@ -1304,6 +1306,8 @@ class Handler(BaseHTTPRequestHandler):
                 ordered[key] = clean(str(value or ""))
         if not ordered.get("job_status"):
             ordered["job_status"] = "Not applied"
+        if not ordered.get("date_added"):
+            ordered["date_added"] = datetime.date.today().isoformat()
         body = payload.get("body") or "## Description\n"
         write_note(target, compose_note(ordered, FIELD_ORDER, body))
         self._json({"created": relative(target), "row": row_for(target, datetime.date.today())},

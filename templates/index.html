@@ -367,6 +367,7 @@
           <th class="sortable" data-key="company" tabindex="0" scope="col">Company &amp; role<span class="arrow">↓</span></th>
           <th scope="col">Location</th>
           <th scope="col">Status</th>
+          <th class="sortable" data-key="added" tabindex="0" scope="col">Added<span class="arrow">↓</span></th>
           <th class="sortable" data-key="applied" tabindex="0" scope="col">Applied<span class="arrow">↓</span></th>
           <th class="sortable" data-key="clock" tabindex="0" scope="col">Days<span class="arrow">↓</span></th>
           <th class="sortable" data-key="deadline" tabindex="0" scope="col">Deadline<span class="arrow">↓</span></th>
@@ -729,6 +730,11 @@ function renderOnThisDay() {
         <span class="what">${e.verb} <a href="#${encodeURIComponent(e.row.path)}" data-open="${esc(e.row.path)}">${esc(e.row.company)}</a>
         for ${esc(e.row.title)}</span></div>`).join("")
     : `<span class="empty">Nothing has happened on this date in a previous year.</span>`;
+}
+
+function leadDays(row) {
+  if (!row.added || !row.applied) return null;
+  return Math.round((new Date(row.applied + "T00:00:00") - new Date(row.added + "T00:00:00")) / 86400000);
 }
 
 function renderWall() {
@@ -1172,12 +1178,13 @@ function renderLedger() {
       </td>
       <td class="loc">${esc(r.location)}</td>
       <td>${statusSelect(r)}</td>
+      <td class="num">${r.added || "&ndash;"}</td>
       <td class="num">${r.applied || "&ndash;"}</td>
       ${clockCell(r)}
       <td class="num">${r.deadline ? esc(r.deadline) + (showRel ? ` <span class="${relCls}">${fmtDeadline(r)}</span>` : "") : "&ndash;"}</td>
       <td><span class="links">${docPills(r)}</span></td>
     </tr>`;
-  }).join("") || `<tr><td colspan="7" class="empty" style="padding:20px 12px">Nothing matches those filters.</td></tr>`;
+  }).join("") || `<tr><td colspan="8" class="empty" style="padding:20px 12px">Nothing matches those filters.</td></tr>`;
   $("readout").textContent = `${rows.length} of ${DATA.length} shown`;
   const clear = $("clear-term");
   clear.hidden = !state.term;
