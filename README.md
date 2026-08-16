@@ -133,8 +133,10 @@ built-in subset renderer is used.
   without reading the status column.
 - **Columns** hides any column except Company & role, remembered per browser, so
   the ledger can be narrowed to what a particular session cares about.
-- **Charts** cover the funnel, applications sent per month, and the status
-  breakdown. Bars and rows report their exact figures on hover or keyboard focus.
+- **Charts** cover the funnel, applications sent, and the status breakdown. Bars
+  and rows report their exact figures on hover or keyboard focus. The applications
+  histogram reads by month or by day; the day view is sized so the current month
+  fills the panel, with earlier months reached by scrolling sideways.
 - **Documents** written for a position are matched automatically and linked from
   both the ledger and the panel, so a note shows at a glance whether its letter or
   CV exists. A deadline that already has a letter written is flagged `letter

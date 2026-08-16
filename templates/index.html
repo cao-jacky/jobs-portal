@@ -65,7 +65,9 @@
   button.ghost { background:transparent; }
 
   .panel { background:var(--surface); border:1px solid var(--hairline); border-radius:6px; padding:20px; display:flex; flex-direction:column; gap:16px; }
-  .panel > h2 { font-size:13px; font-weight:600; margin:0; }
+  /* Matches nested headings too, since wrapping a title in a header row would
+     otherwise silently drop it out of this rule. */
+  .panel h2 { font-size:13px; font-weight:600; margin:0; }
   .panel-note { font-size:12.5px; color:var(--ink-muted); margin:0; }
 
   .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(164px,1fr)); gap:1px; background:var(--hairline); border:1px solid var(--hairline); border-radius:6px; overflow:hidden; }
@@ -88,6 +90,9 @@
   .empty { font-size:13px; color:var(--ink-muted); font-style:italic; }
 
   .charts { display:grid; grid-template-columns:1.3fr 1fr; gap:16px; }
+  /* Grid items default to min-width:auto and will grow to fit their content, so a
+     wide scroller inside one pushes the whole page sideways unless this is set. */
+  .charts > .panel { min-width:0; }
   @media (max-width:900px) { .charts { grid-template-columns:1fr; } }
   .funnel { display:flex; flex-direction:column; gap:9px; }
   .stage { display:grid; grid-template-columns:104px 1fr 78px; align-items:center; gap:12px; }
@@ -805,18 +810,38 @@ function renderSent(sent) {
   $("by-month").setAttribute("aria-pressed", String(!byDay));
   $("by-day").setAttribute("aria-pressed", String(byDay));
   $("months").setAttribute("aria-label", `Applications sent per ${unit}`);
-  // a day view needs room to breathe, so give each bar a floor width and let it scroll
-  $("months").style.minWidth = byDay ? `${series.length * 6}px` : "";
-  $("months-axis").style.minWidth = byDay ? `${series.length * 6}px` : "";
+  // The day view is sized so the current month fills the panel, with the rest of
+  // the record reachable by scrolling sideways rather than squeezed in beside it.
+  const scroller = document.querySelector(".sent-scroll");
+  let pitch = 0, startIndex = 0;
+  if (byDay && series.length) {
+    const today = new Date(CONFIG.today + "T00:00:00");
+    const daysThisMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const view = (scroller && scroller.clientWidth) || 700;
+    pitch = Math.max(7, Math.floor(view / daysThisMonth));
+    const width = series.length * pitch;
+    $("months").style.minWidth = `${width}px`;
+    $("months-axis").style.minWidth = `${width}px`;
+    const firstOfMonth = CONFIG.today.slice(0, 8) + "01";
+    startIndex = series.findIndex(v => v.key >= firstOfMonth);
+    if (startIndex < 0) startIndex = Math.max(0, series.length - daysThisMonth);
+  } else {
+    $("months").style.minWidth = "";
+    $("months-axis").style.minWidth = "";
+  }
   $("months").innerHTML = series.map(v => `<div class="bar-col" tabindex="0"
       data-tip="${v.key} &middot; ${v.n} sent" aria-label="${v.key}: ${v.n} applications sent">
       <div class="bar" style="height:${v.n ? Math.max(4, v.n / peak * 100) : 0}%"></div></div>`).join("");
   $("months-axis").innerHTML = series.map((v, i) => {
-    const show = byDay ? v.major : (i === 0 || i === series.length - 1 || v.major);
-    return `<span>${show ? v.label : ""}</span>`;
+    if (!byDay) {
+      const show = i === 0 || i === series.length - 1 || v.major;
+      return `<span>${show ? v.label : ""}</span>`;
+    }
+    const day = Number(v.key.slice(8));
+    const text = day === 1 ? MONTH_NAMES[Number(v.key.slice(5, 7)) - 1] : (day % 5 === 0 ? day : "");
+    return `<span>${text}</span>`;
   }).join("");
-  const scroller = document.querySelector(".sent-scroll");
-  if (scroller && byDay) scroller.scrollLeft = scroller.scrollWidth;
+  if (scroller && byDay) scroller.scrollLeft = startIndex * pitch;
 }
 
 function setSentBy(next) {
