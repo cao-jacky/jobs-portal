@@ -1192,7 +1192,34 @@ window.addEventListener("scroll", hideTip, { passive: true });
 
 /* ---------------- ledger ---------------- */
 
-const state = { q:"", status:null, year:null, key:"applied", dir:"desc", term:null, termPaths:null };
+const SORT_KEY = "jobs-portal-sort";
+const SORT_DEFAULT = { key: "added", dir: "desc" };
+
+function storedSort() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SORT_KEY) || "null");
+    if (saved && typeof saved.key === "string" && (saved.dir === "asc" || saved.dir === "desc")) {
+      return saved;
+    }
+  } catch (_) { /* fall through to the default */ }
+  return SORT_DEFAULT;
+}
+
+const state = Object.assign(
+  { q: "", status: null, year: null, term: null, termPaths: null },
+  storedSort()
+);
+
+function applySortIndicator() {
+  document.querySelectorAll("th.sortable").forEach(th => {
+    if (th.dataset.key === state.key) {
+      th.dataset.dir = state.dir;
+      th.querySelector(".arrow").textContent = state.dir === "desc" ? "↓" : "↑";
+    } else {
+      th.removeAttribute("data-dir");
+    }
+  });
+}
 
 const KIND_LABEL = { letter: "letter", resume: "CV", cv: "CV" };
 
@@ -1626,9 +1653,9 @@ document.querySelectorAll("th.sortable").forEach(th => {
   const act = () => {
     state.dir = state.key === th.dataset.key && state.dir === "desc" ? "asc" : "desc";
     state.key = th.dataset.key;
-    document.querySelectorAll("th.sortable").forEach(o => o.removeAttribute("data-dir"));
-    th.dataset.dir = state.dir;
-    th.querySelector(".arrow").textContent = state.dir === "desc" ? "↓" : "↑";
+    try { localStorage.setItem(SORT_KEY, JSON.stringify({ key: state.key, dir: state.dir })); }
+    catch (_) { /* a remembered sort is a convenience, not a requirement */ }
+    applySortIndicator();
     renderLedger();
   };
   th.addEventListener("click", act);
@@ -1673,7 +1700,7 @@ $("src-dir").textContent = CONFIG.jobsDir;
 if (CONFIG.readOnly) { $("mode-badge").classList.remove("sr"); $("new-btn").disabled = true; }
 renderColumnMenu();
 applyColumns();
-document.querySelector('th[data-key="applied"]').dataset.dir = "desc";
+applySortIndicator();
 load().then(() => {
   const wanted = decodeURIComponent((location.hash || "").replace(/^#/, ""));
   if (wanted) openNote(wanted);
