@@ -142,7 +142,10 @@ built-in subset renderer is used.
   CV exists. A deadline that already has a letter written is flagged `letter
   ready`.
 
-Light and dark themes both ship, following the viewer's system preference.
+Light and dark themes both ship, following the viewer's system preference. The tab
+icon is an SVG drawn in the source rather than a binary asset, served from
+`/favicon.svg` and `/favicon.ico`, and reachable without a token so a browser tab
+never trips the auth prompt.
 
 ### Cover letters
 

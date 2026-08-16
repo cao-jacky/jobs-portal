@@ -897,6 +897,17 @@ def letter_template() -> Path | None:
     return newest
 
 
+# The funnel the whole portal is about: tracked, applied, resolved. Drawn rather
+# than shipped as a binary so the image stays readable and reviewable in the diff.
+FAVICON = (
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Jobs Portal">'
+    b'<rect width="32" height="32" rx="7" fill="#2a78d6"/>'
+    b'<rect x="6" y="8" width="20" height="4" rx="2" fill="#ffffff"/>'
+    b'<rect x="6" y="14" width="14" height="4" rx="2" fill="#ffffff" fill-opacity="0.82"/>'
+    b'<rect x="6" y="20" width="8" height="4" rx="2" fill="#ffffff" fill-opacity="0.64"/>'
+    b"</svg>"
+)
+
 # --------------------------------------------------------------------------- #
 # HTTP
 # --------------------------------------------------------------------------- #
@@ -955,6 +966,15 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/healthz":
             self._json({"ok": True, "positions": len(list_notes()), "markdown": MARKDOWN_BACKEND,
                         "pdf": SOFFICE or False})
+            return
+        if route in {"/favicon.svg", "/favicon.ico"}:
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "image/svg+xml")
+            self.send_header("Content-Length", str(len(FAVICON)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(FAVICON)
             return
         if not self._authorised():
             self._error(HTTPStatus.UNAUTHORIZED, "a token is required")
