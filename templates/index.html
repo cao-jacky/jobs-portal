@@ -278,6 +278,25 @@
   .checks .bad { color:var(--critical); }
   .letter-hint { font-size:12.5px; color:var(--ink-muted); margin:0 0 10px; }
   #letter-body { min-height:420px; }
+  .cols { position:relative; }
+  .cols > summary { list-style:none; cursor:pointer; font-family:var(--mono); font-size:11px;
+                    padding:5px 10px; border-radius:999px; border:1px solid var(--hairline);
+                    background:var(--surface); color:var(--ink-2); user-select:none; }
+  .cols > summary::-webkit-details-marker { display:none; }
+  .cols[open] > summary { background:var(--accent-soft); border-color:var(--accent); color:var(--ink); }
+  .cols > summary:hover { border-color:var(--baseline); color:var(--ink); }
+  .cols > summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .cols-menu { position:absolute; z-index:12; top:calc(100% + 6px); left:0; min-width:190px;
+               background:var(--surface); border:1px solid var(--hairline); border-radius:6px;
+               box-shadow:0 12px 30px var(--shadow); padding:9px; display:flex;
+               flex-direction:column; gap:2px; }
+  .cols-menu label { display:flex; align-items:center; gap:8px; font-size:13px; padding:4px 6px;
+                     border-radius:4px; cursor:pointer; }
+  .cols-menu label:hover { background:var(--sunken); }
+  .cols-menu input { width:auto; }
+  .cols-menu .locked { color:var(--ink-muted); cursor:default; }
+  .cols-menu .foot { border-top:1px solid var(--hairline); margin-top:5px; padding-top:7px; }
+  .cols-menu .foot button { width:100%; font-size:12px; }
   .form { display:flex; flex-direction:column; gap:14px; }
   .fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; }
   .field { display:flex; flex-direction:column; gap:5px; }
@@ -360,18 +379,22 @@
       <div class="chips" id="year-chips" role="group" aria-label="Filter by year"></div>
       <span class="readout" id="readout"></span>
       <button id="clear-term" class="chip" hidden></button>
+      <details class="cols" id="cols">
+        <summary aria-label="Choose which columns to show">Columns</summary>
+        <div class="cols-menu" id="cols-menu"></div>
+      </details>
     </div>
     <div class="scroller">
       <table>
         <thead><tr>
-          <th class="sortable" data-key="company" tabindex="0" scope="col">Company &amp; role<span class="arrow">↓</span></th>
-          <th scope="col">Location</th>
-          <th scope="col">Status</th>
-          <th class="sortable" data-key="added" tabindex="0" scope="col">Added<span class="arrow">↓</span></th>
-          <th class="sortable" data-key="applied" tabindex="0" scope="col">Applied<span class="arrow">↓</span></th>
-          <th class="sortable" data-key="clock" tabindex="0" scope="col">Days<span class="arrow">↓</span></th>
-          <th class="sortable" data-key="deadline" tabindex="0" scope="col">Deadline<span class="arrow">↓</span></th>
-          <th scope="col">Documents</th>
+          <th class="sortable" data-col="company" data-key="company" tabindex="0" scope="col">Company &amp; role<span class="arrow">↓</span></th>
+          <th data-col="location" scope="col">Location</th>
+          <th data-col="status" scope="col">Status</th>
+          <th class="sortable" data-col="added" data-key="added" tabindex="0" scope="col">Added<span class="arrow">↓</span></th>
+          <th class="sortable" data-col="applied" data-key="applied" tabindex="0" scope="col">Applied<span class="arrow">↓</span></th>
+          <th class="sortable" data-col="clock" data-key="clock" tabindex="0" scope="col">Days<span class="arrow">↓</span></th>
+          <th class="sortable" data-col="deadline" data-key="deadline" tabindex="0" scope="col">Deadline<span class="arrow">↓</span></th>
+          <th data-col="docs" scope="col">Documents</th>
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>
@@ -1082,6 +1105,70 @@ document.addEventListener("input", e => {
   if (e.target.id === "letter-body") { dirty = true; $("save-state").textContent = "unsaved changes"; }
 });
 
+/* ---------------- which columns are shown ---------------- */
+
+const COLUMNS = [
+  { key: "company", label: "Company & role", locked: true },
+  { key: "location", label: "Location" },
+  { key: "status", label: "Status" },
+  { key: "added", label: "Added" },
+  { key: "applied", label: "Applied" },
+  { key: "clock", label: "Days" },
+  { key: "deadline", label: "Deadline" },
+  { key: "docs", label: "Documents" },
+];
+const COLUMNS_KEY = "jobs-portal-columns";
+
+function hiddenColumns() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(COLUMNS_KEY) || "[]");
+    return new Set(Array.isArray(stored) ? stored.filter(k => k !== "company") : []);
+  } catch (_) { return new Set(); }
+}
+
+function applyColumns() {
+  const hidden = hiddenColumns();
+  document.querySelectorAll("[data-col]").forEach(cell => {
+    cell.hidden = hidden.has(cell.dataset.col);
+  });
+  const visible = COLUMNS.length - hidden.size;
+  const empty = document.querySelector("#rows td.empty");
+  if (empty) empty.colSpan = visible;
+  const summary = document.querySelector("#cols > summary");
+  if (summary) summary.textContent = hidden.size ? `Columns ${visible}/${COLUMNS.length}` : "Columns";
+}
+
+function renderColumnMenu() {
+  const hidden = hiddenColumns();
+  $("cols-menu").innerHTML = COLUMNS.map(col => col.locked
+    ? `<label class="locked"><input type="checkbox" checked disabled> ${esc(col.label)}</label>`
+    : `<label><input type="checkbox" data-column="${col.key}"${hidden.has(col.key) ? "" : " checked"}>
+         ${esc(col.label)}</label>`).join("")
+    + `<div class="foot"><button type="button" id="cols-reset">Show every column</button></div>`;
+}
+
+document.addEventListener("change", event => {
+  const box = event.target.closest("[data-column]");
+  if (!box) return;
+  const hidden = hiddenColumns();
+  if (box.checked) hidden.delete(box.dataset.column); else hidden.add(box.dataset.column);
+  try { localStorage.setItem(COLUMNS_KEY, JSON.stringify([...hidden])); } catch (_) {}
+  applyColumns();
+});
+
+document.addEventListener("click", event => {
+  if (!event.target.closest("#cols-reset")) return;
+  try { localStorage.removeItem(COLUMNS_KEY); } catch (_) {}
+  renderColumnMenu();
+  applyColumns();
+});
+
+// clicking away closes the menu, which a bare <details> will not do on its own
+document.addEventListener("click", event => {
+  const menu = $("cols");
+  if (menu && menu.open && !event.target.closest("#cols")) menu.open = false;
+});
+
 /* ---------------- hover tooltip ---------------- */
 
 const tip = () => $("tip");
@@ -1130,12 +1217,12 @@ function docPills(row) {
 
 function clockCell(row) {
   const v = clockOf(row);
-  if (v === null) return `<td class="num">&ndash;</td>`;
+  if (v === null) return `<td class="num" data-col="clock">&ndash;</td>`;
   if (row.daysOpen !== null) {
     const cls = row.daysOpen > 60 ? "flag" : row.daysOpen > 21 ? "flag warn" : "";
-    return `<td class="num"><span class="${cls}">${v} open</span></td>`;
+    return `<td class="num" data-col="clock"><span class="${cls}">${v} open</span></td>`;
   }
-  return `<td class="num">${v} to no</td>`;
+  return `<td class="num" data-col="clock">${v} to no</td>`;
 }
 
 function statusSelect(row) {
@@ -1172,20 +1259,21 @@ function renderLedger() {
     const showRel = r.daysToDeadline !== null && r.status === "Not applied";
     const relCls = r.daysToDeadline < 0 ? "flag" : r.daysToDeadline <= 3 ? "flag warn" : "";
     return `<tr data-path="${esc(r.path)}" class="${current && current.path === r.path ? "active" : ""}">
-      <td>
+      <td data-col="company">
         <div class="co"><span class="status-dot" style="background:${TONE[r.status] || TONE.Unknown}" title="${esc(r.status)}"></span>${esc(r.company)}${drafts.has(r.path) ? '<span class="draft-dot" title="unsaved draft in this browser"></span>' : ""}</div>
         <div class="ti">${esc(r.title)}</div>
       </td>
-      <td class="loc">${esc(r.location)}</td>
-      <td>${statusSelect(r)}</td>
-      <td class="num">${r.added || "&ndash;"}</td>
-      <td class="num">${r.applied || "&ndash;"}</td>
+      <td class="loc" data-col="location">${esc(r.location)}</td>
+      <td data-col="status">${statusSelect(r)}</td>
+      <td class="num" data-col="added">${r.added || "&ndash;"}</td>
+      <td class="num" data-col="applied">${r.applied || "&ndash;"}</td>
       ${clockCell(r)}
-      <td class="num">${r.deadline ? esc(r.deadline) + (showRel ? ` <span class="${relCls}">${fmtDeadline(r)}</span>` : "") : "&ndash;"}</td>
-      <td><span class="links">${docPills(r)}</span></td>
+      <td class="num" data-col="deadline">${r.deadline ? esc(r.deadline) + (showRel ? ` <span class="${relCls}">${fmtDeadline(r)}</span>` : "") : "&ndash;"}</td>
+      <td data-col="docs"><span class="links">${docPills(r)}</span></td>
     </tr>`;
   }).join("") || `<tr><td colspan="8" class="empty" style="padding:20px 12px">Nothing matches those filters.</td></tr>`;
   $("readout").textContent = `${rows.length} of ${DATA.length} shown`;
+  applyColumns();
   const clear = $("clear-term");
   clear.hidden = !state.term;
   if (state.term) clear.textContent = `adverts mentioning "${state.term}" ✕`;
@@ -1583,6 +1671,8 @@ window.addEventListener("beforeunload", () => { if (dirty) stashDraft(); });
 
 $("src-dir").textContent = CONFIG.jobsDir;
 if (CONFIG.readOnly) { $("mode-badge").classList.remove("sr"); $("new-btn").disabled = true; }
+renderColumnMenu();
+applyColumns();
 document.querySelector('th[data-key="applied"]').dataset.dir = "desc";
 load().then(() => {
   const wanted = decodeURIComponent((location.hash || "").replace(/^#/, ""));

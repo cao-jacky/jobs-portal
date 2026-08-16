@@ -131,6 +131,8 @@ built-in subset renderer is used.
   gone quiet for more than 21 days. Both are clickable.
 - **Each row leads with a status colour dot**, so the ledger can be scanned
   without reading the status column.
+- **Columns** hides any column except Company & role, remembered per browser, so
+  the ledger can be narrowed to what a particular session cares about.
 - **Charts** cover the funnel, applications sent per month, and the status
   breakdown. Bars and rows report their exact figures on hover or keyboard focus.
 - **Documents** written for a position are matched automatically and linked from
