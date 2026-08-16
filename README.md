@@ -244,6 +244,54 @@ Résumés/2026/Resume - Example Oy - AI Engineer.pdf       → matched
 extensions, with PDFs shown inline and everything else downloaded. Notes
 themselves are not servable through it.
 
+## Driving it from an LLM
+
+An MCP server ships alongside the portal, so a model can do the same work through
+the same safety properties: every write still goes through the portal, which means
+surgical edits, atomic replace, backups and conflict detection apply equally to a
+model and to a person clicking buttons.
+
+```
+uv sync --extra mcp
+```
+
+Register it with any MCP client. For Claude Code:
+
+```
+claude mcp add jobs -- uv run --directory /path/to/jobs-portal jobs-mcp
+```
+
+or by hand, alongside a remote portal:
+
+```json
+"jobs": {
+  "type": "stdio",
+  "command": "uv",
+  "args": ["run", "--directory", "/path/to/jobs-portal", "jobs-mcp"],
+  "env": { "PORTAL_URL": "http://lab:8412", "PORTAL_TOKEN": "…" }
+}
+```
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORTAL_URL` | `http://localhost:8412` | Where the portal is listening. |
+| `PORTAL_TOKEN` | unset | The portal's `AUTH_TOKEN`, if it has one. |
+| `PORTAL_ALLOW_WRITES` | `1` | Set to `0` for a read-only server, whatever the portal allows. |
+
+**Tools.** `list_positions`, `get_position`, `search_adverts`, `pipeline_stats`,
+`create_position`, `update_position`, `get_letter`, `save_letter`, `create_letter`,
+`check_letter`, `render_letter_pdf`.
+
+**Resources and prompts are the part that matters.** Tools alone would let a model
+write competent generic letters into the folder. What makes the output match the
+record is the documents at the top of the jobs folder: the model letter and its
+rules, the evidence bank, the strategy, and the funnel numbers. These are exposed
+as resources (`jobs://guide/cover-letter-rules`, `jobs://guide/profile`,
+`jobs://guide/application-process`, `jobs://guide/job-search`, `jobs://pipeline`),
+and a `draft_cover_letter` prompt assembles the rules, the evidence, the advert and
+the verification order into one instruction. A client that skips them will produce
+letters that do not sound like the ones that got interviews.
+
 ## How writing works
 
 Editing files in place is the risky part of a tool like this, so writes are

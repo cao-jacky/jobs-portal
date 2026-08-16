@@ -1027,6 +1027,27 @@ class Handler(BaseHTTPRequestHandler):
                 "canRenderPdf": bool(SOFFICE),
             })
             return
+        if route == "/api/guides":
+            # The markdown documents sitting at the top of the jobs folder are the
+            # rules the letters are written to. Exposed read-only so an MCP client
+            # can follow the same method rather than inventing its own.
+            guides = [
+                {"name": g.name, "bytes": g.stat().st_size, "mtime": g.stat().st_mtime}
+                for g in sorted(JOBS_DIR.glob("*.md"))
+                if g.is_file() and not g.name.startswith(".")
+            ] if JOBS_DIR.is_dir() else []
+            self._json({"guides": guides})
+            return
+        if route == "/api/guide":
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            name = (query.get("name", [""])[0] or "").strip()
+            candidate = (JOBS_DIR / name).resolve()
+            if "/" in name or not name.endswith(".md") or candidate.parent != JOBS_DIR \
+                    or not candidate.is_file():
+                self._error(HTTPStatus.BAD_REQUEST, "name must be a markdown file at the top of the jobs folder")
+                return
+            self._json({"name": name, "text": candidate.read_text(encoding="utf-8", errors="replace")})
+            return
         if route == "/api/file":
             query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             try:
