@@ -531,6 +531,8 @@
   </footer>
 </aside>
 
+<datalist id="dl-company"></datalist>
+<datalist id="dl-location"></datalist>
 <canvas id="confetti" aria-hidden="true"></canvas>
 <div id="tip" role="status" aria-live="polite"></div>
 <div id="toast" role="status" aria-live="polite"></div>
@@ -1468,8 +1470,19 @@ function fieldInput(key, value) {
   }
   const type = /^(deadline|date_)/.test(key) ? "date" : key === "link" ? "url" : "text";
   const wide = key === "link" ? " wide" : "";
+  const list = key === "company" || key === "location" ? ` list="dl-${key}"` : "";
   return `<div class="field${wide}"><label for="${id}">${key}</label>
-    <input id="${id}" type="${type}" data-field="${key}" value="${esc(value ?? "")}"></div>`;
+    <input id="${id}" type="${type}" data-field="${key}"${list} value="${esc(value ?? "")}"></div>`;
+}
+
+function refreshDatalists() {
+  const fill = (id, values) => {
+    $(id).innerHTML = [...new Set(values.filter(v => v && v !== "Unknown"))]
+      .sort((a, b) => a.localeCompare(b))
+      .map(v => `<option value="${esc(v)}">`).join("");
+  };
+  fill("dl-company", DATA.map(r => r.company));
+  fill("dl-location", DATA.map(r => r.location));
 }
 
 function formState() {
@@ -1704,6 +1717,7 @@ async function load() {
     DATA = payload.positions;
     renderSummary();
     renderLedger();
+    refreshDatalists();
   } catch (err) {
     toast(err.message, true);
   }
