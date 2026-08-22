@@ -1240,6 +1240,29 @@ class Handler(BaseHTTPRequestHandler):
             "mtime": path.stat().st_mtime,
         })
 
+    def do_DELETE(self) -> None:
+        if not self._authorised():
+            self._error(HTTPStatus.UNAUTHORIZED, "a token is required")
+            return
+        if urllib.parse.urlparse(self.path).path != "/api/note":
+            self._error(HTTPStatus.NOT_FOUND, "no such route")
+            return
+        if READ_ONLY:
+            self._error(HTTPStatus.FORBIDDEN, "the portal is running read-only")
+            return
+        try:
+            payload = self._body_json()
+            path = safe_path(payload.get("path", ""))
+        except ValueError as exc:
+            self._error(HTTPStatus.BAD_REQUEST, str(exc))
+            return
+        if not path.is_file():
+            self._error(HTTPStatus.NOT_FOUND, "note not found")
+            return
+        saved_backup = backup(path)
+        path.unlink()
+        self._json({"deleted": relative(path), "backup": saved_backup})
+
     def do_POST(self) -> None:
         if not self._authorised():
             self._error(HTTPStatus.UNAUTHORIZED, "a token is required")

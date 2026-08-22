@@ -64,6 +64,8 @@
   button.primary:hover { filter:brightness(1.08); }
   button.primary:disabled { opacity:.5; cursor:not-allowed; filter:none; }
   button.ghost { background:transparent; }
+  button.danger { color:#c0392b; border-color:#c0392b55; }
+  button.danger:hover { background:#c0392b14; }
 
   .panel { background:var(--surface); border:1px solid var(--hairline); border-radius:6px; padding:20px; display:flex; flex-direction:column; gap:16px; }
   /* Matches nested headings too, since wrapping a title in a header row would
@@ -522,6 +524,7 @@
     <span class="readout" id="save-state"></span>
     <span class="grow"></span>
     <a id="pdf-link" class="doc" href="#" target="_blank" rel="noopener" hidden>open the PDF</a>
+    <button id="delete-btn" class="ghost danger" hidden>Delete position</button>
     <button id="pdf-btn" class="ghost" hidden>Render PDF</button>
     <button id="revert-btn" class="ghost" hidden>Discard changes</button>
     <button id="save-btn" class="primary" hidden>Save note</button>
@@ -1412,6 +1415,7 @@ function setEditing(on) {
   $("editor").hidden = !on;
   $("save-btn").hidden = !on || CONFIG.readOnly;
   $("revert-btn").hidden = !on;
+  $("delete-btn").hidden = CONFIG.readOnly || !current;
   $("read-tab").classList.toggle("primary", !on);
   $("edit-tab").classList.toggle("primary", on);
   $("save-state").textContent = on && CONFIG.readOnly ? "read-only mode, saving is disabled" : "";
@@ -1429,6 +1433,7 @@ function setMode(next) {
   $("letter-view").hidden = !letter;
   $("pdf-btn").hidden = !letter;
   $("pdf-link").hidden = !letter || !(currentLetter && currentLetter.pdf);
+  $("delete-btn").hidden = creating || letter || CONFIG.readOnly || !current;
   if (letter) {
     $("view").hidden = true;
     $("editor").hidden = true;
@@ -1476,6 +1481,7 @@ function formState() {
 }
 
 function stashDraft() {
+  if (!dirty) return;                 // a submit already cleared the form; a late timer must not re-stash it
   const key = mode === "new" ? NEW_KEY : (current && current.path);
   if (!key) return;
   const state = formState();
@@ -1675,6 +1681,7 @@ async function submitNewNote() {
       method: "POST",
       body: JSON.stringify({ frontmatter, body: $("body").value, year: $("year").value })
     });
+    clearTimeout(markDirty._t);
     dirty = false;
     dropDraft(NEW_KEY);
     showDraftBanner(null);
@@ -1779,6 +1786,32 @@ function discardDraft() {
   if (current) openNote(current.path);
 }
 $("revert-btn").addEventListener("click", () => mode === "letter" ? openLetter() : discardDraft());
+async function deleteNote() {
+  if (!current || CONFIG.readOnly) return;
+  const front = current.frontmatter || {};
+  const label = [front.company, front.job_title].filter(Boolean).join(" — ") || current.path;
+  const kept = "\n\nA copy is kept in .portal-backups, but the position disappears from the ledger.";
+  if (!confirm(`Delete "${label}"?${kept}`)) return;
+  const path = current.path;
+  $("delete-btn").disabled = true;
+  try {
+    await api("/api/note", { method: "DELETE", body: JSON.stringify({ path }) });
+    clearTimeout(markDirty._t);
+    dropDraft(path);
+    dirty = false;
+    const index = DATA.findIndex(r => r.path === path);
+    if (index >= 0) DATA.splice(index, 1);
+    closeDrawer();
+    renderSummary();
+    renderLedger();
+    toast(`Deleted ${path}. A copy is in .portal-backups.`);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    $("delete-btn").disabled = false;
+  }
+}
+$("delete-btn").addEventListener("click", deleteNote);
 $("draft-discard").addEventListener("click", discardDraft);
 document.addEventListener("keydown", e => {
   if (e.key === "Escape" && $("drawer").classList.contains("on")) closeDrawer();
