@@ -499,6 +499,73 @@ def list_notes() -> list[dict]:
     return rows
 
 
+def collapse(text: str) -> str:
+    """One line of text with runs of whitespace squeezed, so an excerpt taken by
+    character offset does not come back full of the note's line breaks."""
+    return " ".join(text.split())
+
+
+def excerpt_around(text: str, at: int, length: int, width: int = 130) -> str:
+    """A readable window around a hit, cut at spaces rather than mid-word."""
+    start = max(0, at - width // 2)
+    end = min(len(text), at + length + width // 2)
+    if start > 0:
+        space = text.find(" ", start, at)
+        start = space + 1 if space != -1 else start
+    if end < len(text):
+        space = text.rfind(" ", at + length, end)
+        end = space if space != -1 else end
+    return ("\u2026" if start > 0 else "") + text[start:end].strip() + ("\u2026" if end < len(text) else "")
+
+
+def search_notes(needle: str, limit: int = 500) -> list[dict]:
+    """Substring search across the body and the frontmatter values of every note.
+
+    The ledger already filters company, title and location in the browser, which
+    is instant but only sees the fields. This reaches the prose, which is where
+    the reason for keeping a note usually lives, and hands back a short excerpt
+    so a row can say why it matched.
+    """
+    needle = collapse(needle or "").lower()
+    if len(needle) < 2 or not POSITIONS_DIR.is_dir():
+        return []
+    found: list[dict] = []
+    for path in sorted(POSITIONS_DIR.rglob("*.md")):
+        try:
+            front, _order, body = split_note(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        plain = re.sub(r"^#{1,6}\s+", "", body, flags=re.MULTILINE)
+        hay = collapse(" ".join([plain, *(str(v) for v in front.values() if v)]))
+        at = hay.lower().find(needle)
+        if at < 0:
+            continue
+        found.append({"path": relative(path), "excerpt": excerpt_around(hay, at, len(needle))})
+        if len(found) >= limit:
+            break
+    return found
+
+
+def ledger_fingerprint() -> dict:
+    """How many notes there are and when one of them last changed.
+
+    Stats only, never a read, so the page can poll this every minute to notice
+    edits made in the editor rather than the portal without the cost of parsing
+    the whole folder each time.
+    """
+    count = 0
+    newest = 0.0
+    if POSITIONS_DIR.is_dir():
+        for path in POSITIONS_DIR.rglob("*.md"):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            count += 1
+            newest = max(newest, stat.st_mtime)
+    return {"count": count, "newest": round(newest, 3)}
+
+
 def backup(path: Path) -> str | None:
     if not BACKUPS or not path.exists():
         return None
@@ -998,6 +1065,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/positions":
             self._json({"positions": list_notes(), "today": datetime.date.today().isoformat()})
+            return
+        if route == "/api/search":
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            needle = query.get("q", [""])[0]
+            self._json({"q": needle, "matches": search_notes(needle)})
+            return
+        if route == "/api/changes":
+            self._json(ledger_fingerprint())
             return
         if route == "/api/insights":
             rows = list_notes()
