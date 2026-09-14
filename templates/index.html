@@ -171,6 +171,8 @@
     border:1px solid var(--hairline); background:var(--sunken); color:var(--ink); width:auto; min-width:132px;
   }
   select.status:disabled { opacity:1; }
+  #drawer-status { font-size:13px; padding:6px 11px; min-width:150px; }
+  .drawer .actions .divider { align-self:stretch; width:1px; background:var(--hairline); margin:2px 3px; }
   .swatch { display:inline-block; width:7px; height:7px; border-radius:2px; margin-right:6px; vertical-align:middle; }
 
   /* floating panel */
@@ -496,6 +498,8 @@
       <button id="read-tab" class="primary">Read</button>
       <button id="edit-tab">Edit</button>
       <button id="letter-tab">Letter</button>
+      <span class="divider" id="status-divider" aria-hidden="true"></span>
+      <select class="status" id="drawer-status" aria-label="Status for this position"></select>
       <span class="grow"></span>
       <a id="open-ad" href="#" target="_blank" rel="noopener" hidden>Open the advert</a>
     </div>
@@ -1355,11 +1359,23 @@ function clockCell(row) {
   return `<td class="num" data-col="clock">${v} to no</td>`;
 }
 
+function statusOptions(selected) {
+  return ORDER.filter(s => s !== "Unknown" || selected === "Unknown")
+    .map(s => `<option value="${esc(s)}"${s === selected ? " selected" : ""}>${esc(s)}</option>`).join("");
+}
+
 function statusSelect(row) {
-  const options = ORDER.filter(s => s !== "Unknown" || row.status === "Unknown")
-    .map(s => `<option value="${esc(s)}"${s === row.status ? " selected" : ""}>${esc(s)}</option>`).join("");
   return `<select class="status" data-path="${esc(row.path)}" aria-label="Status for ${esc(row.company)}"
-    ${CONFIG.readOnly ? "disabled" : ""}>${options}</select>`;
+    ${CONFIG.readOnly ? "disabled" : ""}>${statusOptions(row.status)}</select>`;
+}
+
+/* The same pill as the ledger carries, in the open note's header. Changing it
+   goes through quickStatus, so a status moves in one click from either place. */
+function fillDrawerStatus(path, status) {
+  const select = $("drawer-status");
+  select.innerHTML = statusOptions(status || "Unknown");
+  select.dataset.path = path;
+  select.disabled = CONFIG.readOnly;
 }
 
 function renderLedger() {
@@ -1436,6 +1452,8 @@ function setMode(next) {
   $("read-tab").hidden = creating;
   $("edit-tab").hidden = creating;
   $("letter-tab").hidden = creating;
+  $("drawer-status").hidden = creating;
+  $("status-divider").hidden = creating;
   $("letter-tab").classList.toggle("primary", letter);
   $("letter-view").hidden = !letter;
   $("pdf-btn").hidden = !letter;
@@ -1535,6 +1553,17 @@ function showDraftBanner(draft, stale) {
     : `<b>Draft restored</b> from ${esc(since(draft.at))}, kept in this browser and not yet written to the file.`;
 }
 
+function renderDrawerMeta() {
+  if (!current) return;
+  const front = current.frontmatter || {};
+  const bits = [current.path];
+  if (front.location) bits.push(front.location);
+  if (front.job_status) bits.push(front.job_status);
+  if (front.deadline) bits.push("deadline " + front.deadline);
+  $("drawer-meta").innerHTML = bits.map(b => `<span>${esc(b)}</span>`).join("");
+  fillDrawerStatus(current.path, front.job_status);
+}
+
 async function openNote(path) {
   if (dirty) stashDraft();
   try {
@@ -1547,11 +1576,7 @@ async function openNote(path) {
   const front = current.frontmatter || {};
   $("drawer-title").textContent = front.company || "Untitled";
   $("drawer-role").textContent = front.job_title || "";
-  const bits = [current.path];
-  if (front.location) bits.push(front.location);
-  if (front.job_status) bits.push(front.job_status);
-  if (front.deadline) bits.push("deadline " + front.deadline);
-  $("drawer-meta").innerHTML = bits.map(b => `<span>${esc(b)}</span>`).join("");
+  renderDrawerMeta();
   const ad = $("open-ad");
   if (front.link) { ad.href = front.link; ad.hidden = false; } else { ad.hidden = true; }
   const docs = current.docs || [];
@@ -1624,6 +1649,7 @@ async function saveNote() {
     const fresh = await api("/api/note?path=" + encodeURIComponent(current.path));
     current = fresh;
     $("view").innerHTML = fresh.html;
+    renderDrawerMeta();          // the form may have moved the status; the header pill follows
     $("save-state").textContent = "saved";
     const stamped = Object.entries(result.autoFilled || {});
     toast(stamped.length
@@ -1644,7 +1670,16 @@ async function quickStatus(path, value) {
     const result = await api("/api/note", { method: "PUT", body: JSON.stringify({ path, frontmatter: { job_status: value } }) });
     const index = DATA.findIndex(r => r.path === path);
     if (index >= 0) DATA[index] = result.row;
-    if (current && current.path === path) current.mtime = result.mtime;
+    if (current && current.path === path) {
+      current.mtime = result.mtime;
+      current.frontmatter = { ...(current.frontmatter || {}), job_status: value };
+      renderDrawerMeta();
+      // The edit form holds its own copy of the field. A draft is the reader's
+      // own work and is left alone; an untouched form is brought up to date so
+      // it cannot save the old status back over this one.
+      const field = $("f-job_status");
+      if (field && !dirty) field.value = value;
+    }
     renderSummary();
     renderLedger();
     const stamped = Object.entries(result.autoFilled || {});
@@ -1658,6 +1693,9 @@ async function quickStatus(path, value) {
     }
   } catch (err) {
     toast(err.message, true);
+    if (current && current.path === path) {
+      fillDrawerStatus(path, previous || (current.frontmatter || {}).job_status);
+    }
     load();
   }
 }
