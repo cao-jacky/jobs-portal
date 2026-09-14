@@ -327,6 +327,10 @@
            opacity:0; pointer-events:none; transition:opacity 130ms ease, transform 130ms ease; max-width:80vw; }
   #toast.on { opacity:1; transform:translateX(-50%) translateY(0); }
   #toast.bad { background:var(--critical); color:#fff; }
+  #toast.holds-action { pointer-events:auto; }
+  #toast button { margin-left:10px; font-size:12px; padding:3px 9px; background:transparent;
+                  border-color:rgba(255,255,255,.35); color:inherit; }
+  #toast button:hover { border-color:rgba(255,255,255,.75); }
   .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
   .badge { font-family:var(--mono); font-size:10.5px; padding:2px 7px; border-radius:999px; border:1px solid var(--hairline); background:var(--sunken); color:var(--ink-2); }
   .draft-note { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 12px; margin:0 0 16px;
@@ -338,6 +342,74 @@
   td .co { display:flex; align-items:center; gap:0; }
   .status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; flex:none;
                 margin-right:9px; box-shadow:0 0 0 1px var(--ring) inset; }
+
+  /* the phrase a body search matched, under the company in its row */
+  .excerpt { display:block; margin-top:4px; font-size:12px; color:var(--ink-muted); font-style:italic;
+             max-width:60ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .excerpt mark { background:var(--accent-soft); color:var(--ink); border-radius:2px; padding:0 1px; }
+  .searching { font-style:italic; }
+
+  /* picking several rows, and the bar that acts on them */
+  th.pick, td.pick { width:1px; white-space:nowrap; padding-right:4px; }
+  body.read-only .pick { display:none; }
+  th.pick input, td.pick input { cursor:pointer; margin:0; }
+  .bulk { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center;
+          padding:9px 12px; border:1px solid var(--accent); background:var(--accent-soft);
+          border-radius:var(--r-md); font-size:13px; }
+  .bulk select { width:auto; min-width:150px; }
+  .bulk .count { font-family:var(--mono); font-size:12px; }
+
+  /* the notes folder changed under an open tab */
+  .stale { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:9px 12px;
+           background:var(--sunken); border-left:3px solid var(--warning);
+           border-radius:0 var(--r-sm) var(--r-sm) 0; font-size:13px; }
+  .stale button { font-size:12px; padding:4px 9px; }
+
+  /* replaces window.confirm and window.prompt, which cannot be styled and sit
+     outside the page's own focus handling */
+  dialog.ask { border:1px solid var(--hairline); border-radius:var(--r-lg); padding:0;
+               width:min(440px,92vw); background:var(--surface); color:var(--ink);
+               box-shadow:0 24px 64px var(--shadow); }
+  dialog.ask::backdrop { background:rgba(11,11,11,.5); }
+  .ask-body { padding:20px 22px 6px; display:flex; flex-direction:column; gap:10px; }
+  .ask-body h2 { margin:0; font-size:16px; font-weight:620; }
+  .ask-body p { margin:0; font-size:13.5px; color:var(--ink-2); white-space:pre-line; }
+  .ask-foot { display:flex; gap:8px; justify-content:flex-end; padding:14px 22px 18px; }
+
+  .sort-mobile { display:none; align-items:center; gap:6px; }
+  .sort-mobile select { width:auto; font-size:12.5px; padding:5px 8px; }
+
+  /* Under this width the eight columns stop being a table worth scrolling
+     sideways and become one card per position, each cell labelled. */
+  @media (max-width:640px) {
+    .wrap { padding:22px 14px 56px; }
+    .scroller { overflow-x:visible; border:0; background:none; border-radius:0; }
+    thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+    table, tbody, tbody tr, tbody td { display:block; width:auto; }
+    tbody tr { position:relative; background:var(--surface); border:1px solid var(--hairline);
+               border-radius:var(--r-md); box-shadow:var(--card-shadow); padding:12px 14px; margin-bottom:10px; }
+    tbody tr:hover td, tbody tr.active td { background:none; }
+    tbody tr.active { border-color:var(--accent); }
+    tbody tr.active td:first-child { box-shadow:none; }
+    tbody td { border:0; padding:2px 0; }
+    tbody tr:last-child td { border-bottom:0; }
+    td.num { white-space:normal; }
+    td .loc { white-space:normal; }
+    tbody td[data-label]::before {
+      content:attr(data-label); display:inline-block; min-width:82px;
+      font-family:var(--mono); font-size:10px; letter-spacing:.07em; text-transform:uppercase;
+      color:var(--ink-muted);
+    }
+    tbody td.pick { position:absolute; top:11px; right:12px; padding:0; }
+    tbody td.pick::before { content:none; }
+    td[data-col="company"] { padding-right:26px; }
+    /* a labelled row with nothing after it reads as broken, so drop it */
+    td[data-col="docs"]:has(.links:empty) { display:none; }
+    .excerpt { white-space:normal; }
+    .sort-mobile { display:flex; }
+    select.status { min-width:0; }
+  }
+
   @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
 </head>
@@ -345,7 +417,8 @@
 <div class="wrap">
   <header class="masthead">
     <h1>Jobs Portal</h1>
-    <span class="stamp">watching <b id="src-count">…</b> notes in <b id="src-dir"></b></span>
+    <span class="stamp">watching <b id="src-count">…</b> notes in <b id="src-dir"></b>
+      &middot; read <b id="loaded-at">just now</b></span>
     <span class="grow"></span>
     <div class="tabs" role="tablist">
       <button class="tab" id="tab-ledger" role="tab" aria-selected="true">Ledger</button>
@@ -357,6 +430,12 @@
   </header>
 
   <div id="view-ledger">
+  <div class="stale" id="stale" role="status" hidden>
+    <span id="stale-text"></span>
+    <span class="grow"></span>
+    <button type="button" id="stale-reload" class="primary">Reload</button>
+    <button type="button" id="stale-dismiss" class="ghost">Not now</button>
+  </div>
   <section class="kpis" id="kpis" aria-label="Summary figures"></section>
 
   <section class="attention" aria-label="Needs attention">
@@ -406,6 +485,9 @@
       <input id="q" type="search" placeholder="Search company, role, or location" autocomplete="off">
       <div class="chips" id="status-chips" role="group" aria-label="Filter by status"></div>
       <div class="chips" id="year-chips" role="group" aria-label="Filter by year"></div>
+      <label class="sort-mobile" for="sort-by">Sort
+        <select id="sort-by" aria-label="Sort the ledger"></select>
+      </label>
       <span class="readout" id="readout"></span>
       <button id="clear-term" class="chip" hidden></button>
       <details class="cols" id="cols">
@@ -413,9 +495,18 @@
         <div class="cols-menu" id="cols-menu"></div>
       </details>
     </div>
+    <div class="bulk" id="bulk" hidden>
+      <span class="count" id="bulk-count"></span>
+      <label class="sr" for="bulk-status">Status to apply to the selected positions</label>
+      <select id="bulk-status"></select>
+      <button type="button" id="bulk-apply" class="primary">Apply to selected</button>
+      <span class="grow"></span>
+      <button type="button" id="bulk-clear" class="ghost">Clear selection</button>
+    </div>
     <div class="scroller">
       <table>
         <thead><tr>
+          <th class="pick" scope="col"><input type="checkbox" id="pick-all" aria-label="Select every row shown"></th>
           <th class="sortable" data-col="company" data-key="company" tabindex="0" scope="col">Company &amp; role<span class="arrow">↓</span></th>
           <th data-col="location" scope="col">Location</th>
           <th data-col="status" scope="col">Status</th>
@@ -540,6 +631,23 @@
   </footer>
 </aside>
 
+<dialog class="ask" id="ask">
+  <form method="dialog">
+    <div class="ask-body">
+      <h2 id="ask-title"></h2>
+      <p id="ask-text"></p>
+      <div id="ask-field" hidden>
+        <label class="sr" for="ask-input">Answer</label>
+        <input type="text" id="ask-input" autocomplete="off">
+      </div>
+    </div>
+    <div class="ask-foot">
+      <button value="cancel" id="ask-cancel" class="ghost">Cancel</button>
+      <button value="ok" id="ask-ok" class="primary">OK</button>
+    </div>
+  </form>
+</dialog>
+
 <datalist id="dl-company"></datalist>
 <datalist id="dl-location"></datalist>
 <canvas id="confetti" aria-hidden="true"></canvas>
@@ -601,13 +709,60 @@ const since = ts => {
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
-function toast(message, bad) {
+function toast(message, bad, action) {
   const el = $("toast");
   el.textContent = message;
+  if (action) {
+    // An offer to undo has to outlast a glance, so a toast carrying one stays
+    // up longer and does not vanish while the pointer is on its way to it.
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = action.label;
+    button.addEventListener("click", () => { el.classList.remove("on"); action.run(); });
+    el.append(" ", button);
+  }
   el.classList.toggle("bad", !!bad);
+  el.classList.toggle("holds-action", !!action);
   el.classList.add("on");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => el.classList.remove("on"), bad ? 5200 : 2600);
+  toast._t = setTimeout(() => el.classList.remove("on"), action ? 9000 : bad ? 5200 : 2600);
+}
+
+/* A question asked in the page's own voice. <dialog> brings the focus handling,
+   the Escape key and a top layer above the drawer with it, so this is little
+   more than a promise wired onto its close event. Resolves to null when the
+   reader backs out, true (or the typed string) when they go ahead. */
+function ask({ title, text = "", confirm = "OK", danger = false, prefill = null }) {
+  const dialog = $("ask");
+  const wantsText = prefill !== null;
+  $("ask-title").textContent = title;
+  $("ask-text").textContent = text;
+  $("ask-text").hidden = !text;
+  $("ask-field").hidden = !wantsText;
+  $("ask-input").value = wantsText ? prefill : "";
+  const ok = $("ask-ok");
+  ok.textContent = confirm;
+  ok.classList.toggle("danger", danger);
+  ok.classList.toggle("primary", !danger);
+  return new Promise(resolve => {
+    dialog.addEventListener("close", () => {
+      if (dialog.returnValue !== "ok") { resolve(null); return; }
+      resolve(wantsText ? $("ask-input").value.trim() : true);
+    }, { once: true });
+    dialog.showModal();
+    (wantsText ? $("ask-input") : ok).focus();
+  });
+}
+
+/* Wrap the first occurrence of the needle in <mark>. Both sides are escaped
+   before the search so the offsets still line up once entities are in play. */
+function highlight(text, needle) {
+  const safe = esc(text);
+  const mark = esc(needle);
+  if (!mark) return safe;
+  const at = safe.toLowerCase().indexOf(mark.toLowerCase());
+  if (at < 0) return safe;
+  return safe.slice(0, at) + "<mark>" + safe.slice(at, at + mark.length) + "</mark>" + safe.slice(at + mark.length);
 }
 
 async function api(path, options = {}) {
@@ -619,8 +774,17 @@ async function api(path, options = {}) {
   try { payload = await response.json(); } catch (_) { /* no body */ }
   if (!response.ok) {
     if (response.status === 401) {
-      const entered = prompt("This portal needs its access token:");
-      if (entered) { TOKEN = entered.trim(); localStorage.setItem(TOKEN_KEY, TOKEN); return api(path, options); }
+      const entered = await ask({
+        title: "This portal needs its access token",
+        text: TOKEN ? "The token this browser remembers was not accepted." : "",
+        confirm: "Unlock",
+        prefill: ""
+      });
+      if (entered) {
+        TOKEN = entered;
+        try { localStorage.setItem(TOKEN_KEY, TOKEN); } catch (_) {}
+        return api(path, options);
+      }
     }
     throw new Error((payload && payload.error) || `${response.status} ${response.statusText}`);
   }
@@ -697,7 +861,7 @@ function renderSummary() {
       <span class="n">${counts.get(s)}</span></div>`).join("");
 
   // filter chips
-  const chip = (label, value, group) => `<button class="chip" role="switch" aria-pressed="${state[group] === value}"
+  const chip = (label, value, group) => `<button class="chip" role="switch" aria-pressed="${state[group].has(value)}"
       data-group="${group}" data-value="${esc(value)}">${esc(label)}</button>`;
   $("status-chips").innerHTML = present.map(s => chip(`${s} ${counts.get(s)}`, s, "status")).join("");
   $("year-chips").innerHTML = [...new Set(DATA.map(r => r.year))].sort().map(y => chip(y, y, "year")).join("");
@@ -1131,7 +1295,12 @@ async function openLetter() {
   const doc = letterOf(DATA.find(r => r.path === current.path));
   if (!doc) {
     if (CONFIG.readOnly) { toast("No letter exists for this position.", true); return; }
-    if (!confirm("No letter exists for this position yet. Create one from the newest letter's formatting?")) return;
+    const make = await ask({
+      title: "No letter exists for this position yet",
+      text: "One can be started from the newest letter's page size, margins and fonts.",
+      confirm: "Create the letter"
+    });
+    if (!make) return;
     try {
       const made = await api("/api/letter", { method: "POST", body: JSON.stringify({ notePath: current.path }) });
       toast(`Created ${made.created} using the formatting of ${made.template}.`);
@@ -1240,7 +1409,7 @@ function applyColumns() {
   });
   const visible = COLUMNS.length - hidden.size;
   const empty = document.querySelector("#rows td.empty");
-  if (empty) empty.colSpan = visible;
+  if (empty) empty.colSpan = visible + (CONFIG.readOnly ? 0 : 1);   // + the selection column
   const summary = document.querySelector("#cols > summary");
   if (summary) summary.textContent = hidden.size ? `Columns ${visible}/${COLUMNS.length}` : "Columns";
 }
@@ -1313,9 +1482,140 @@ function storedSort() {
 }
 
 const state = Object.assign(
-  { q: "", status: null, year: null, term: null, termPaths: null },
+  { q: "", status: new Set(), year: new Set(), term: null, termPaths: null },
   storedSort()
 );
+
+/* Which paths the last body search matched and the query it answered for.
+   Held apart from state.q so results belonging to an earlier keystroke are
+   never mistaken for the current ones. */
+let bodyMatches = null;
+let bodyQuery = "";
+const bodyHitsAreCurrent = () => bodyMatches !== null && bodyQuery === state.q;
+
+/* ---------------- filters live in the address bar ---------------- */
+
+/* Sort and hidden columns are preferences and belong in localStorage; a filter
+   is a question about the data, so it goes in the URL where it can be
+   bookmarked, shared, reloaded and walked back through with the Back button. */
+function syncUrl(push) {
+  const params = new URLSearchParams();
+  if (state.q) params.set("q", state.q);
+  if (state.status.size) params.set("status", [...state.status].join("|"));
+  if (state.year.size) params.set("year", [...state.year].join("|"));
+  if (state.term) params.set("term", state.term);
+  const query = params.toString();
+  const url = location.pathname + (query ? "?" + query : "") + location.hash;
+  if (url === location.pathname + location.search + location.hash) return;
+  history[push ? "pushState" : "replaceState"](null, "", url);
+}
+
+function readUrl() {
+  const params = new URLSearchParams(location.search);
+  const split = key => new Set((params.get(key) || "").split("|").filter(Boolean));
+  state.q = (params.get("q") || "").toLowerCase().trim();
+  state.status = split("status");
+  state.year = split("year");
+  state.term = params.get("term") || null;
+  state.termPaths = null;
+  $("q").value = params.get("q") || "";
+}
+
+/* A term filter names a word from the advert cloud, and the paths that carry it
+   only exist in the insights payload, so restoring one from a URL has to wait
+   for that to arrive. */
+async function resolveTerm() {
+  if (!state.term) { state.termPaths = null; return; }
+  if (!insights) {
+    try { insights = await api("/api/insights"); } catch (_) { return; }
+  }
+  const terms = (insights.termStats && insights.termStats.terms) || [];
+  const entry = terms.find(t => t.term === state.term);
+  state.termPaths = new Set((entry && entry.paths) || []);
+  renderLedger();
+}
+
+/* ---------------- searching the note text ---------------- */
+
+/* The browser filters company, title and location the instant a key lands.
+   Everything else a note says lives in its body, which only the server has, so
+   the two run together: fields match immediately, prose catches up. */
+async function runBodySearch(query) {
+  if (query.length < 2) {
+    bodyMatches = null;
+    bodyQuery = "";
+    renderLedger();
+    return;
+  }
+  try {
+    const payload = await api("/api/search?q=" + encodeURIComponent(query));
+    const answered = (payload.q || "").toLowerCase().trim();
+    if (answered !== state.q) return;           // a later keystroke owns the field now
+    bodyMatches = new Map(payload.matches.map(m => [m.path, m.excerpt]));
+    bodyQuery = answered;
+    renderLedger();
+  } catch (_) {
+    /* the field filter still works; a failed body search is not worth a toast */
+  }
+}
+
+/* ---------------- acting on several rows at once ---------------- */
+
+const picked = new Set();
+
+/* Selection is read back off the checkboxes rather than re-rendered, so ticking
+   one does not rebuild the table and throw away the focus that is sitting in it. */
+function refreshPickState() {
+  const boxes = [...document.querySelectorAll(".pick-row")];
+  const mine = boxes.filter(b => b.checked).length;
+  const all = $("pick-all");
+  all.checked = boxes.length > 0 && mine === boxes.length;
+  all.indeterminate = mine > 0 && mine < boxes.length;
+  all.disabled = CONFIG.readOnly || !boxes.length;
+  const bar = $("bulk");
+  bar.hidden = CONFIG.readOnly || picked.size === 0;
+  if (bar.hidden) return;
+  const onScreen = new Set([...document.querySelectorAll(".pick-row")].map(b => b.dataset.pick));
+  const offScreen = [...picked].filter(path => !onScreen.has(path)).length;
+  $("bulk-count").textContent = `${picked.size} selected`
+    + (offScreen ? ` (${offScreen} outside the current filters)` : "");
+  if (!$("bulk-status").options.length) $("bulk-status").innerHTML = statusOptions("Applied");
+}
+
+async function applyBulkStatus() {
+  const value = $("bulk-status").value;
+  const paths = [...picked];
+  if (!paths.length || CONFIG.readOnly) return;
+  const go = await ask({
+    title: `Set ${paths.length} position${paths.length === 1 ? "" : "s"} to ${value}?`,
+    text: "Every note is written on its own, and a copy of each is kept in .portal-backups.",
+    confirm: "Set them"
+  });
+  if (!go) return;
+  $("bulk-apply").disabled = true;
+  const failed = [];
+  let done = 0;
+  for (const path of paths) {
+    try {
+      await api("/api/note", { method: "PUT", body: JSON.stringify({ path, frontmatter: { job_status: value } }) });
+      done++;
+    } catch (_) { failed.push(path); }
+  }
+  $("bulk-apply").disabled = false;
+  picked.clear();
+  await load();
+  resyncFingerprint();
+  toast(failed.length ? `${done} set to ${value}, ${failed.length} could not be written.`
+                      : `${done} position${done === 1 ? "" : "s"} set to ${value}.`, failed.length > 0);
+}
+
+function onSearchInput(value) {
+  state.q = value.toLowerCase().trim();
+  syncUrl(false);
+  renderLedger();
+  clearTimeout(runBodySearch._t);
+  runBodySearch._t = setTimeout(() => runBodySearch(state.q), 180);
+}
 
 function applySortIndicator() {
   document.querySelectorAll("th.sortable").forEach(th => {
@@ -1351,12 +1651,13 @@ function docPills(row) {
 
 function clockCell(row) {
   const v = clockOf(row);
-  if (v === null) return `<td class="num" data-col="clock">&ndash;</td>`;
+  const cell = `class="num" data-col="clock" data-label="Days"`;
+  if (v === null) return `<td ${cell}>&ndash;</td>`;
   if (row.daysOpen !== null) {
     const cls = row.daysOpen > 60 ? "flag" : row.daysOpen > 21 ? "flag warn" : "";
-    return `<td class="num" data-col="clock"><span class="${cls}">${v} open</span></td>`;
+    return `<td ${cell}><span class="${cls}">${v} open</span></td>`;
   }
-  return `<td class="num" data-col="clock">${v} to no</td>`;
+  return `<td ${cell}>${v} to no</td>`;
 }
 
 function statusOptions(selected) {
@@ -1380,11 +1681,15 @@ function fillDrawerStatus(path, status) {
 
 function renderLedger() {
   const drafts = new Set(draftPaths());
+  const hits = bodyHitsAreCurrent() ? bodyMatches : null;
   let rows = DATA.filter(r => {
-    if (state.status && r.status !== state.status) return false;
-    if (state.year && r.year !== state.year) return false;
+    if (state.status.size && !state.status.has(r.status)) return false;
+    if (state.year.size && !state.year.has(r.year)) return false;
     if (state.termPaths && !state.termPaths.has(r.path)) return false;
-    if (state.q && !`${r.company} ${r.title} ${r.location}`.toLowerCase().includes(state.q)) return false;
+    if (state.q) {
+      const fields = `${r.company} ${r.title} ${r.location}`.toLowerCase().includes(state.q);
+      if (!fields && !(hits && hits.has(r.path))) return false;
+    }
     return true;
   });
   const dir = state.dir === "asc" ? 1 : -1;
@@ -1404,21 +1709,29 @@ function renderLedger() {
   $("rows").innerHTML = rows.map(r => {
     const showRel = r.daysToDeadline !== null && r.status === "Not applied";
     const relCls = r.daysToDeadline < 0 ? "flag" : r.daysToDeadline <= 3 ? "flag warn" : "";
-    return `<tr data-path="${esc(r.path)}" class="${current && current.path === r.path ? "active" : ""}">
+    const excerpt = hits && hits.get(r.path);
+    return `<tr data-path="${esc(r.path)}" tabindex="0" class="${current && current.path === r.path ? "active" : ""}">
+      <td class="pick"><input type="checkbox" class="pick-row" data-pick="${esc(r.path)}"
+        ${picked.has(r.path) ? "checked" : ""} aria-label="Select ${esc(r.company)}"></td>
       <td data-col="company">
         <div class="co"><span class="status-dot" style="background:${TONE[r.status] || TONE.Unknown}" title="${esc(r.status)}"></span>${esc(r.company)}${drafts.has(r.path) ? '<span class="draft-dot" title="unsaved draft in this browser"></span>' : ""}</div>
         <div class="ti">${esc(r.title)}</div>
+        ${excerpt ? `<span class="excerpt" title="${esc(excerpt)}">${highlight(excerpt, state.q)}</span>` : ""}
       </td>
-      <td class="loc" data-col="location">${esc(r.location)}</td>
-      <td data-col="status">${statusSelect(r)}</td>
-      <td class="num" data-col="added">${r.added || "&ndash;"}</td>
-      <td class="num" data-col="applied">${r.applied || "&ndash;"}</td>
+      <td class="loc" data-col="location" data-label="Location">${esc(r.location)}</td>
+      <td data-col="status" data-label="Status">${statusSelect(r)}</td>
+      <td class="num" data-col="added" data-label="Added">${r.added || "&ndash;"}</td>
+      <td class="num" data-col="applied" data-label="Applied">${r.applied || "&ndash;"}</td>
       ${clockCell(r)}
-      <td class="num" data-col="deadline">${r.deadline ? esc(r.deadline) + (showRel ? ` <span class="${relCls}">${fmtDeadline(r)}</span>` : "") : "&ndash;"}</td>
-      <td data-col="docs"><span class="links">${docPills(r)}</span></td>
+      <td class="num" data-col="deadline" data-label="Deadline">${r.deadline ? esc(r.deadline) + (showRel ? ` <span class="${relCls}">${fmtDeadline(r)}</span>` : "") : "&ndash;"}</td>
+      <td data-col="docs" data-label="Documents"><span class="links">${docPills(r)}</span></td>
     </tr>`;
-  }).join("") || `<tr><td colspan="8" class="empty" style="padding:20px 12px">Nothing matches those filters.</td></tr>`;
-  $("readout").textContent = `${rows.length} of ${DATA.length} shown`;
+  }).join("") || `<tr><td colspan="9" class="empty" style="padding:20px 12px">Nothing matches those filters.</td></tr>`;
+  const inText = hits ? rows.filter(r => hits.has(r.path)
+    && !`${r.company} ${r.title} ${r.location}`.toLowerCase().includes(state.q)).length : 0;
+  $("readout").textContent = `${rows.length} of ${DATA.length} shown`
+    + (inText ? `, ${inText} by their text` : "");
+  refreshPickState();
   applyColumns();
   const clear = $("clear-term");
   clear.hidden = !state.term;
@@ -1566,6 +1879,7 @@ function renderDrawerMeta() {
 
 async function openNote(path) {
   if (dirty) stashDraft();
+  if (!$("drawer").classList.contains("on")) drawerOpener = document.activeElement;
   try {
     current = await api("/api/note?path=" + encodeURIComponent(path));
   } catch (err) {
@@ -1616,13 +1930,44 @@ function openPanel() {
 
 function closeDrawer() {
   if (dirty) stashDraft();          // keep the work rather than asking to throw it away
+  const wasPath = current && current.path;
   dirty = false;
   current = null;
-  if (location.hash) history.replaceState(null, "", location.pathname);
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   $("scrim").classList.remove("on");
   $("drawer").classList.remove("on");
   $("drawer").setAttribute("aria-hidden", "true");
   renderLedger();
+  // Send focus back where it came from. The row itself is a fresh node after
+  // the re-render, so it is found again by path rather than held onto.
+  const row = wasPath && document.querySelector(`tbody tr[data-path="${cssEscape(wasPath)}"]`);
+  if (row) { row.focus(); return; }
+  if (drawerOpener && document.contains(drawerOpener)) drawerOpener.focus();
+}
+
+const cssEscape = value => (window.CSS && CSS.escape) ? CSS.escape(value) : value.replace(/["\\]/g, "\\$&");
+
+/* The drawer claims aria-modal, so Tab has to honour that claim and stay inside
+   it; without this the reader tabs straight out into the page behind the scrim. */
+let drawerOpener = null;
+
+function trapFocus(event) {
+  if (event.key !== "Tab") return;
+  const drawer = $("drawer");
+  if (!drawer.classList.contains("on")) return;
+  const stops = [...drawer.querySelectorAll("a[href], button, select, input, textarea, [tabindex]")]
+    .filter(el => !el.disabled && el.tabIndex !== -1 && el.getClientRects().length > 0);
+  if (!stops.length) return;
+  const first = stops[0];
+  const last = stops[stops.length - 1];
+  const inside = drawer.contains(document.activeElement);
+  if (event.shiftKey && (!inside || document.activeElement === first)) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (!inside || document.activeElement === last)) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 async function saveNote() {
@@ -1650,6 +1995,7 @@ async function saveNote() {
     current = fresh;
     $("view").innerHTML = fresh.html;
     renderDrawerMeta();          // the form may have moved the status; the header pill follows
+    resyncFingerprint();
     $("save-state").textContent = "saved";
     const stamped = Object.entries(result.autoFilled || {});
     toast(stamped.length
@@ -1663,11 +2009,13 @@ async function saveNote() {
   }
 }
 
-async function quickStatus(path, value) {
+async function quickStatus(path, value, clearDates) {
   const existing = DATA.find(r => r.path === path);
   const previous = existing ? existing.status : "";
+  const edits = { job_status: value };
+  (clearDates || []).forEach(key => { edits[key] = ""; });
   try {
-    const result = await api("/api/note", { method: "PUT", body: JSON.stringify({ path, frontmatter: { job_status: value } }) });
+    const result = await api("/api/note", { method: "PUT", body: JSON.stringify({ path, frontmatter: edits }) });
     const index = DATA.findIndex(r => r.path === path);
     if (index >= 0) DATA[index] = result.row;
     if (current && current.path === path) {
@@ -1682,14 +2030,21 @@ async function quickStatus(path, value) {
     }
     renderSummary();
     renderLedger();
+    resyncFingerprint();
     const stamped = Object.entries(result.autoFilled || {});
+    // Putting a status back also clears whatever date the change stamped, so an
+    // undo leaves the note as it was rather than half-reverted.
+    const undo = previous && previous !== value ? {
+      label: "Undo",
+      run: () => quickStatus(path, previous, Object.keys(result.autoFilled || {}))
+    } : null;
     if (WON.has(value) && !WON.has(previous)) {
       celebrate();
-      toast(`${result.row.company} → ${value}. That is three in a hundred territory.`);
+      toast(`${result.row.company} → ${value}. That is three in a hundred territory.`, false, undo);
     } else {
       toast(stamped.length
         ? `${result.row.company} set to ${value}, ${stamped.map(([k, v]) => `${k.replace("date_", "")} ${v}`).join(", ")}.`
-        : `${result.row.company} set to ${value}.`);
+        : `${result.row.company} set to ${value}.`, false, undo);
     }
   } catch (err) {
     toast(err.message, true);
@@ -1742,6 +2097,7 @@ async function submitNewNote() {
     dropDraft(NEW_KEY);
     showDraftBanner(null);
     await load();
+    resyncFingerprint();
     toast("Created " + result.created);
     openNote(result.created);
   } catch (err) {
@@ -1758,23 +2114,72 @@ async function load() {
   try {
     const payload = await api("/api/positions");
     DATA = payload.positions;
+    loadedAt = Date.now();
     renderSummary();
     renderLedger();
     refreshDatalists();
+    stampLoadedAt();
   } catch (err) {
     toast(err.message, true);
   }
+}
+
+/* ---------------- noticing edits made outside the portal ---------------- */
+
+/* These notes are files, and the editor that opens them is not this page. A tab
+   left open all afternoon would otherwise show the morning's truth with nothing
+   to say so. /api/changes only stats the folder, so a minute's polling is cheap;
+   the reload is offered rather than taken, because it would throw away whatever
+   is half-typed in the drawer. */
+const POLL_MS = 45000;
+let fingerprint = null;
+let dismissedPrint = null;
+let loadedAt = Date.now();
+
+const printOf = fresh => `${fresh.count}:${fresh.newest}`;
+
+function stampLoadedAt() {
+  const el = $("loaded-at");
+  if (el) el.textContent = Date.now() - loadedAt < 60000 ? "just now" : since(loadedAt);
+}
+
+/* The portal's own writes move the same mtimes the poll watches, so after every
+   save the baseline is taken again rather than reported back as someone else's
+   change. */
+async function resyncFingerprint() {
+  try { fingerprint = printOf(await api("/api/changes")); } catch (_) {}
+}
+
+async function checkChanges() {
+  if (document.hidden) return;
+  let fresh;
+  try { fresh = await api("/api/changes"); } catch (_) { return; }
+  const key = printOf(fresh);
+  if (fingerprint === null) { fingerprint = key; return; }
+  if (key === fingerprint || key === dismissedPrint) return;
+  const delta = fresh.count - DATA.length;
+  $("stale-text").innerHTML = "<b>The notes folder has changed on disk</b> since this page loaded"
+    + (delta > 0 ? `, and there ${delta === 1 ? "is 1 note" : `are ${delta} notes`} more than shown.`
+     : delta < 0 ? `, and there ${delta === -1 ? "is 1 note" : `are ${Math.abs(delta)} notes`} fewer than shown.`
+     : ".");
+  $("stale").hidden = false;
+  dismissedPrint = null;
+  fingerprint = key;
 }
 
 document.addEventListener("click", event => {
   const opener = event.target.closest("[data-open]");
   if (opener) { openNote(opener.dataset.open); return; }
   const chip = event.target.closest(".chip");
-  if (chip) {
+  if (chip && chip.dataset.group) {
     const group = chip.dataset.group;
-    state[group] = state[group] === chip.dataset.value ? null : chip.dataset.value;
+    const value = chip.dataset.value;
+    // Several statuses at once is the common question -- "what is still live?"
+    // is Applied and Interview Invitation and Interviewed together.
+    state[group].has(value) ? state[group].delete(value) : state[group].add(value);
     document.querySelectorAll(`.chip[data-group="${group}"]`).forEach(c =>
-      c.setAttribute("aria-pressed", String(state[group] === c.dataset.value)));
+      c.setAttribute("aria-pressed", String(state[group].has(c.dataset.value))));
+    syncUrl(true);
     renderLedger();
     return;
   }
@@ -1785,6 +2190,7 @@ document.addEventListener("click", event => {
     const entry = ((insights && insights.termStats && insights.termStats.terms) || []).find(t => t.term === name);
     state.term = name;
     state.termPaths = new Set((entry && entry.paths) || []);
+    syncUrl(true);
     showView("ledger");
     renderLedger();
     return;
@@ -1792,16 +2198,31 @@ document.addEventListener("click", event => {
   if (event.target.closest("#clear-term")) {
     state.term = null;
     state.termPaths = null;
+    syncUrl(true);
     renderLedger();
     return;
   }
   const row = event.target.closest("tbody tr[data-path]");
-  if (row && !event.target.closest("select, a")) openNote(row.dataset.path);
+  if (row && !event.target.closest("select, a, input, label")) openNote(row.dataset.path);
 });
 
 document.addEventListener("change", event => {
   const select = event.target.closest("select.status");
   if (select) { quickStatus(select.dataset.path, select.value); return; }
+  const pick = event.target.closest("[data-pick]");
+  if (pick) {
+    pick.checked ? picked.add(pick.dataset.pick) : picked.delete(pick.dataset.pick);
+    refreshPickState();
+    return;
+  }
+  if (event.target === $("pick-all")) {
+    document.querySelectorAll(".pick-row").forEach(box => {
+      box.checked = event.target.checked;
+      event.target.checked ? picked.add(box.dataset.pick) : picked.delete(box.dataset.pick);
+    });
+    refreshPickState();
+    return;
+  }
   if (event.target.closest("#editor")) markDirty();
 });
 document.addEventListener("input", event => { if (event.target.closest("#editor")) markDirty(); });
@@ -1813,6 +2234,7 @@ document.querySelectorAll("th.sortable").forEach(th => {
     try { localStorage.setItem(SORT_KEY, JSON.stringify({ key: state.key, dir: state.dir })); }
     catch (_) { /* a remembered sort is a convenience, not a requirement */ }
     applySortIndicator();
+    renderSortMobile();
     renderLedger();
   };
   th.addEventListener("click", act);
@@ -1823,7 +2245,7 @@ $("editor").addEventListener("submit", e => {
   e.preventDefault();
   mode === "new" ? submitNewNote() : saveNote();
 });
-$("q").addEventListener("input", e => { state.q = e.target.value.toLowerCase().trim(); renderLedger(); });
+$("q").addEventListener("input", e => onSearchInput(e.target.value));
 $("refresh-btn").addEventListener("click", () => load().then(() => toast("Reloaded from disk.")));
 $("new-btn").addEventListener("click", openNewForm);
 $("close-btn").addEventListener("click", closeDrawer);
@@ -1847,8 +2269,13 @@ async function deleteNote() {
   if (!current || CONFIG.readOnly) return;
   const front = current.frontmatter || {};
   const label = [front.company, front.job_title].filter(Boolean).join(" — ") || current.path;
-  const kept = "\n\nA copy is kept in .portal-backups, but the position disappears from the ledger.";
-  if (!confirm(`Delete "${label}"?${kept}`)) return;
+  const go = await ask({
+    title: `Delete ${label}?`,
+    text: "A copy is kept in .portal-backups, but the position disappears from the ledger.",
+    confirm: "Delete it",
+    danger: true
+  });
+  if (!go) return;
   const path = current.path;
   $("delete-btn").disabled = true;
   try {
@@ -1858,9 +2285,11 @@ async function deleteNote() {
     dirty = false;
     const index = DATA.findIndex(r => r.path === path);
     if (index >= 0) DATA.splice(index, 1);
+    picked.delete(path);
     closeDrawer();
     renderSummary();
     renderLedger();
+    resyncFingerprint();
     toast(`Deleted ${path}. A copy is in .portal-backups.`);
   } catch (err) {
     toast(err.message, true);
@@ -1870,24 +2299,129 @@ async function deleteNote() {
 }
 $("delete-btn").addEventListener("click", deleteNote);
 $("draft-discard").addEventListener("click", discardDraft);
+const typingInto = el => !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA"
+  || el.tagName === "SELECT" || el.isContentEditable);
+
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && $("drawer").classList.contains("on")) closeDrawer();
+  if (e.key === "Escape" && $("drawer").classList.contains("on")) { closeDrawer(); return; }
   if ((e.metaKey || e.ctrlKey) && e.key === "s" && (editing || mode === "letter")) {
     e.preventDefault();
     mode === "new" ? submitNewNote() : mode === "letter" ? saveLetter() : saveNote();
+    return;
+  }
+  trapFocus(e);
+
+  // A row is a real stop on the tab order now, so it answers to the keys a
+  // reader would expect once they are standing on it.
+  const row = e.target.closest && e.target.closest("tbody tr[data-path]");
+  if (row && !typingInto(e.target)) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openNote(row.dataset.path);
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
+      const rows = [...document.querySelectorAll("tbody tr[data-path]")];
+      const at = rows.indexOf(row);
+      const next = e.key === "Home" ? rows[0]
+                 : e.key === "End" ? rows[rows.length - 1]
+                 : rows[at + (e.key === "ArrowDown" ? 1 : -1)];
+      if (next) { e.preventDefault(); next.focus(); }
+      return;
+    }
+    if (e.key === "x" || e.key === "X") {
+      const box = row.querySelector(".pick-row");
+      if (box && !box.disabled) {
+        e.preventDefault();
+        box.checked = !box.checked;
+        box.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      return;
+    }
+  }
+
+  if (e.key === "/" && !typingInto(e.target) && !$("drawer").classList.contains("on")) {
+    e.preventDefault();
+    showView("ledger");
+    $("q").focus();
+    $("q").select();
   }
 });
 window.addEventListener("beforeunload", () => { if (dirty) stashDraft(); });
 
+$("pick-all").addEventListener("click", e => e.stopPropagation());
+$("bulk-apply").addEventListener("click", applyBulkStatus);
+$("bulk-clear").addEventListener("click", () => {
+  picked.clear();
+  document.querySelectorAll(".pick-row").forEach(box => { box.checked = false; });
+  refreshPickState();
+});
+
+$("stale-reload").addEventListener("click", async () => {
+  $("stale").hidden = true;
+  await load();
+  await resyncFingerprint();
+  toast("Reloaded from disk.");
+});
+$("stale-dismiss").addEventListener("click", () => {
+  $("stale").hidden = true;
+  dismissedPrint = fingerprint;      // stay quiet until something changes again
+});
+
+/* The column headers are the sort control, and they are hidden on a phone, so
+   the same choice is offered as a select that is only shown at that width. */
+const SORTS = [
+  { key: "company", dir: "asc", label: "Company A–Z" },
+  { key: "added", dir: "desc", label: "Added, newest" },
+  { key: "applied", dir: "desc", label: "Applied, newest" },
+  { key: "clock", dir: "desc", label: "Days, longest" },
+  { key: "deadline", dir: "asc", label: "Deadline, soonest" },
+  { key: "status", dir: "asc", label: "Status" },
+];
+function renderSortMobile() {
+  $("sort-by").innerHTML = SORTS.map(o =>
+    `<option value="${o.key}:${o.dir}"${o.key === state.key && o.dir === state.dir ? " selected" : ""}>${esc(o.label)}</option>`
+  ).join("");
+}
+$("sort-by").addEventListener("change", e => {
+  const [key, dir] = e.target.value.split(":");
+  state.key = key;
+  state.dir = dir;
+  try { localStorage.setItem(SORT_KEY, JSON.stringify({ key, dir })); } catch (_) {}
+  applySortIndicator();
+  renderLedger();
+});
+
+window.addEventListener("popstate", () => {
+  readUrl();
+  renderSummary();
+  renderLedger();
+  resolveTerm();
+  if (state.q.length >= 2) runBodySearch(state.q); else { bodyMatches = null; bodyQuery = ""; }
+});
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { stampLoadedAt(); checkChanges(); } });
+
 $("src-dir").textContent = CONFIG.jobsDir;
-if (CONFIG.readOnly) { $("mode-badge").classList.remove("sr"); $("new-btn").disabled = true; }
+if (CONFIG.readOnly) {
+  $("mode-badge").classList.remove("sr");
+  $("new-btn").disabled = true;
+  document.body.classList.add("read-only");    // nothing to select when nothing can be written
+}
+readUrl();
 renderColumnMenu();
 applyColumns();
 applySortIndicator();
+renderSortMobile();
 load().then(() => {
+  resolveTerm();
+  if (state.q.length >= 2) runBodySearch(state.q);
   const wanted = decodeURIComponent((location.hash || "").replace(/^#/, ""));
   if (wanted) openNote(wanted);
 });
+resyncFingerprint();
+setInterval(checkChanges, POLL_MS);
+setInterval(stampLoadedAt, 30000);
 window.addEventListener("hashchange", () => {
   const wanted = decodeURIComponent((location.hash || "").replace(/^#/, ""));
   if (wanted && (!current || current.path !== wanted)) openNote(wanted);

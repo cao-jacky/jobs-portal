@@ -120,19 +120,43 @@ built-in subset renderer is used.
 - **The Edit tab** exposes every frontmatter field plus the raw body.
   `Cmd/Ctrl+S` saves and `Esc` closes. Unsaved changes are kept as a draft rather
   than warned about, so closing never loses work.
-- **The status dropdown in the table** saves immediately, so moving something to
-  Applied is one click.
+- **The status dropdown** saves immediately, in the table and in the open note's
+  own header, so moving something to Applied is one click from either place. The
+  toast that confirms it offers **Undo**, which puts the status back and clears
+  any date the change stamped.
+- **Search reads the notes, not just the fields.** Company, role and location
+  filter as you type; the body of every note is searched on the server at the
+  same time, and a row that matched on its text shows the sentence it matched on
+  with the phrase highlighted.
+- **Filters live in the URL.** Search, status and year are query parameters, so a
+  view can be bookmarked, shared and reloaded, and the back button walks through
+  them. Status and year chips are multi-select, so "what is still live" is
+  Applied, Interview Invitation and Interviewed pressed together.
+- **Several rows at once**: tick them and set them all to one status in a single
+  confirmed action. Ticks survive a filter change, and the bar says how many of
+  the selected rows the current filters are hiding.
 - **New position** opens the same panel as a form: every frontmatter field, a
   year-folder select, and a body textarea to paste the advert into. The file is
   named `Positions/<year>/<Company> - <Title>.md` from the company and title.
 - **Deep links**: the open note is reflected in the URL hash, so notes can be
   bookmarked and the back button works.
+- **Keyboard throughout**: `/` jumps to the search box, rows are tab stops that
+  open with `Enter`, `↑`/`↓`/`Home`/`End` walk them, `x` ticks one for a bulk
+  edit, and focus stays inside the open note until `Esc` closes it, which returns
+  focus to the row it came from.
+- **Edits made elsewhere are noticed.** These are files, and the editor that
+  opens them is not this page, so the folder is polled once a minute and a banner
+  offers a reload when it has changed. The reload is offered rather than taken,
+  since it would discard anything half-typed. The portal's own saves stay quiet.
 - **Summary panels** list deadlines still unapplied and applications that have
   gone quiet for more than 21 days. Both are clickable.
 - **Each row leads with a status colour dot**, so the ledger can be scanned
   without reading the status column.
 - **Columns** hides any column except Company & role, remembered per browser, so
   the ledger can be narrowed to what a particular session cares about.
+- **On a phone** the eight columns become one card per position with each field
+  labelled, rather than a table to scroll sideways, and the sort that lives in
+  the column headers is offered as a select instead.
 - **Charts** cover the funnel, applications sent, and the status breakdown. Bars
   and rows report their exact figures on hover or keyboard focus. The applications
   histogram reads by month or by day; the day view is sized so the current month
@@ -341,6 +365,8 @@ affects rendering only and never the stored file.
 | `GET` | `/api/note?path=Positions/…md` | One note: frontmatter, raw body, rendered HTML, mtime. |
 | `PUT` | `/api/note` | Save. `{path, frontmatter?, body?, mtime?}`. Passing `mtime` enables conflict detection. |
 | `POST` | `/api/notes` | Create. `{frontmatter:{company, job_title, …}, body?, year?}`. |
+| `GET` | `/api/search?q=…` | Substring search over every note's body and frontmatter values. Returns the matching paths with an excerpt each. |
+| `GET` | `/api/changes` | Note count and newest mtime, by `stat` alone, for cheap polling. |
 
 Client-supplied paths are resolved and rejected unless they land inside
 `Positions/` and end in `.md`, so traversal attempts such as `../../etc/passwd`
