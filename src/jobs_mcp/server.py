@@ -173,8 +173,11 @@ def pipeline_stats() -> dict:
     sent = [r for r in rows if r["status"] in
             {"Applied", "Rejected", "Not eligible"} | won or r["applied"]]
     live = [r for r in rows if r["status"] == "Applied"]
-    wins = [r for r in rows if r["status"] in won]
-    resolved = [r for r in rows if r["status"] in {"Rejected", "Not eligible"} | won]
+    # The portal marks a position interviewed from its status or from a round
+    # already held, so one that was interviewed and then rejected still counts.
+    interviewed = lambda r: r.get("interviewed", r["status"] in won)
+    wins = [r for r in rows if interviewed(r)]
+    resolved = [r for r in rows if r["status"] in {"Rejected", "Not eligible"} or interviewed(r)]
     gaps = sorted(r["daysToOutcome"] for r in rows
                   if r["daysToOutcome"] is not None and r["daysToOutcome"] >= 0)
     ageing = [r for r in live if (r["daysOpen"] or 0) > 21]

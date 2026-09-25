@@ -700,8 +700,10 @@ let dirty = false;
 let editing = false;
 let mode = "note";           // "note" while viewing or editing a file, "new" while creating one
 
-// Every status that means an interview has been offered, which is what the
-// funnel counts as a conversion and when the interview rounds panel shows.
+// Every status that means an interview has been offered: when the interview
+// rounds panel is offered, and what the confetti greets. The stats count
+// row.interviewed instead, which also takes in a held round on a position
+// that has since been rejected.
 const WON = new Set(["Interview Invitation", "Interviewed", "On-going", "Awaiting decision"]);
 const SENT = new Set(["Applied", "Rejected", "Not eligible", ...WON]);
 const CLOSED = new Set(["Rejected", "Not eligible"]);
@@ -846,8 +848,8 @@ const median = arr => arr.length ? (arr.length % 2 ? arr[(arr.length - 1) / 2]
 function renderSummary() {
   const sent = DATA.filter(r => SENT.has(r.status) || r.applied);
   const live = DATA.filter(r => r.status === "Applied");
-  const wins = DATA.filter(r => WON.has(r.status));
-  const resolved = DATA.filter(r => CLOSED.has(r.status) || WON.has(r.status));
+  const wins = DATA.filter(r => r.interviewed);
+  const resolved = DATA.filter(r => CLOSED.has(r.status) || r.interviewed);
   const days = DATA.map(r => r.daysToOutcome).filter(d => d !== null && d >= 0).sort((a, b) => a - b);
   const ageing = live.filter(r => r.daysOpen !== null && r.daysOpen > 21).sort((a, b) => b.daysOpen - a.daysOpen);
   const openDeadlines = DATA.filter(r => r.status === "Not applied" && r.daysToDeadline !== null)
@@ -1079,11 +1081,12 @@ function setSentBy(next) {
 function renderWall() {
   const gaps = DATA.map(r => r.daysToOutcome).filter(d => d !== null && d >= 0).sort((a, b) => a - b);
   const rejections = DATA.filter(r => r.status === "Rejected" || r.status === "Not eligible");
-  const wins = DATA.filter(r => WON.has(r.status));
+  const wins = DATA.filter(r => r.interviewed);
   const sameDay = DATA.filter(r => r.daysToOutcome === 0 || r.daysToOutcome === 1);
 
-  // how many applications have gone out since the most recent interview
-  const winDates = wins.map(r => r.applied).filter(Boolean).sort();
+  // how many applications have gone out since the most recent interview, dated
+  // by the round itself where one is logged and by the application otherwise
+  const winDates = wins.map(r => r.lastInterview || r.applied).filter(Boolean).sort();
   const lastWin = winDates[winDates.length - 1];
   const streak = lastWin ? DATA.filter(r => r.applied && r.applied > lastWin && SENT.has(r.status)).length : null;
   const longest = Math.max(0, ...DATA.map(r => r.daysOpen || 0));
@@ -1123,7 +1126,7 @@ function renderConstellation() {
       return `<span class="con-dot" style="left:${at(when).toFixed(2)}%;background:${TONE[r.status] || TONE.Unknown}"
         data-open="${esc(r.path)}" data-tip="${esc(r.title)} &middot; ${esc(r.status)} &middot; ${when}"></span>`;
     }).join("");
-    const outcome = rows.some(r => WON.has(r.status)) ? " · interviewed" : "";
+    const outcome = rows.some(r => r.interviewed) ? " · interviewed" : "";
     return `<div class="con-row"><span class="who">${esc(company)}<em>×${rows.length}${outcome}</em></span>
       <span class="con-track"><span class="axis"></span>${dots}</span></div>`;
   }).join("");
@@ -2090,8 +2093,10 @@ function roundsLine(row) {
 function renderInterviews() {
   const box = $("interviews");
   const status = ((current && current.frontmatter) || {}).job_status || "";
-  if (!current || mode !== "note" || editing || !WON.has(status)) { box.hidden = true; return; }
-  const rounds = current.interviews || [];
+  const rounds = (current && current.interviews) || [];
+  // Offered once the status says an interview is on; kept whenever rounds are
+  // on record, so a rejection does not hide the rounds that led to it.
+  if (!current || mode !== "note" || editing || !(WON.has(status) || rounds.length)) { box.hidden = true; return; }
   box.hidden = CONFIG.readOnly && !rounds.length;
   $("interview-form").hidden = CONFIG.readOnly;
   $("interview-list").innerHTML = rounds.length ? rounds.map((r, i) => `<li>

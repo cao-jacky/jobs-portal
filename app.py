@@ -84,6 +84,10 @@ INTERVIEW_TYPES = [t.strip() for t in os.environ.get(
     "Recruiter screen, Hiring manager, Technical, Take-home assignment, Case study, "
     "Presentation, Panel, Team fit, Final",
 ).split(",") if t.strip()]
+# Statuses that mean an interview was offered. A position counts as interviewed
+# when it holds one of these, or when a round in its note is already behind it,
+# so a round that ended in a rejection still counts.
+INTERVIEW_STATUSES = {"Interview Invitation", "Interviewed", "On-going", "Awaiting decision"}
 # Statuses an interview being logged is allowed to move forward. Anything past
 # them (Interviewed, On-going, Awaiting decision, Rejected...) is left as it is.
 INTERVIEW_BUMPABLE = {"", "Unknown", "Not applied", "Applied", "Interview Invitation"}
@@ -457,6 +461,9 @@ def enrich(row: dict, today: datetime.date) -> dict:
     row["daysOpen"] = (today - applied).days if applied and not rejected else None
     row["daysToDeadline"] = (deadline - today).days if deadline else None
     row["appliedMonth"] = row["applied"][:7] if applied else None
+    held = sorted(r["date"] for r in row.get("interviews", []) if r["date"] and r["date"] <= today.isoformat())
+    row["lastInterview"] = held[-1] if held else None
+    row["interviewed"] = row["status"] in INTERVIEW_STATUSES or bool(held)
     return row
 
 

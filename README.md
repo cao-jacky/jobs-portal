@@ -49,8 +49,10 @@ The advert text.
 
 `job_status` drives the metrics. The recognised values are `Not applied`,
 `Applied`, `Interview Invitation`, `Interviewed`, `On-going`, `Awaiting decision`,
-`Rejected`, `Not eligible`, and `Skipped`. The four from `Interview Invitation` to
-`Awaiting decision` all count as an interview in the funnel.
+`Rejected`, `Not eligible`, and `Skipped`. A position counts as an interview in
+the stats when its status is one of the four from `Interview Invitation` to
+`Awaiting decision`, or when it has an interview round dated today or earlier,
+so an interview that ended in a rejection still counts.
 
 Interview rounds, when there are any, sit on one optional line: a date and a free
 text type per round, separated by semicolons. Either part can be left out, so a
@@ -146,8 +148,9 @@ built-in subset renderer is used.
   confirmed action. Ticks survive a filter change, and the bar says how many of
   the selected rows the current filters are hiding.
 - **Interview rounds** are logged from the open note once its status is
-  Interview Invitation, Interviewed, On-going or Awaiting decision: a date, if
-  known, and a type. The type is free text. Common types are suggested, along with any type
+  Interview Invitation, Interviewed, On-going or Awaiting decision, and stay on
+  show whatever the status becomes, so a rejection does not hide the rounds
+  that led to it. Each round has a date, if known, and a type. The type is free text. Common types are suggested, along with any type
   already used somewhere in the ledger, so a type made up once is offered for
   the next position too. Adding a round moves the status forward to match:
   Interview Invitation for a round still to come, Interviewed once one is dated
