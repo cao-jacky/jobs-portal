@@ -33,7 +33,9 @@ mcp = MCPServer(
     instructions=(
         f"Job application tracker backed by markdown notes, served by the portal at {PORTAL_URL}. "
         "Positions live one note per role with frontmatter (company, job_title, location, deadline, "
-        "job_status, date_added, date_applied, date_rejected, link) and the advert in the body.\n\n"
+        "job_status, date_added, date_applied, date_rejected, link, and optionally interviews) and "
+        "the advert in the body. Interview rounds are recorded with log_interview; their type is "
+        "free text, such as Recruiter screen or Technical.\n\n"
         "Before drafting any cover letter, read the cover-letter-rules and profile resources: they "
         "carry the model letter, the structural moves, the banned constructions, the no-gap rule and "
         "the evidence bank, and a letter written without them will not match the voice or the record. "
@@ -95,6 +97,7 @@ def summarise(row: dict) -> dict:
         "daysOpen": row.get("daysOpen"),
         "daysToDeadline": row.get("daysToDeadline"),
         "documents": [d["kind"] for d in row.get("docs", [])],
+        "interviews": row.get("interviews", []),
     }
 
 
@@ -251,6 +254,41 @@ def update_position(path: str, job_status: str = "", deadline: str = "", locatio
         raise PortalError("give at least one field to change")
     result = call("PUT", "/api/note", {"path": path, "frontmatter": fields})
     return {"saved": result["saved"], "autoFilled": result.get("autoFilled", {}),
+            "position": summarise(result["row"])}
+
+
+@mcp.tool()
+def log_interview(path: str, type: str, date: str = "", remove: bool = False) -> dict:
+    """Record an interview round on a position, or remove one.
+
+    Rounds are kept in the note's `interviews` frontmatter line. Adding a round
+    moves the status forward to match: to "Interviewed" if any round is dated
+    today or earlier, otherwise to "Interview Invitation". A status already past
+    those (Interviewed, Rejected, Skipped...) is left alone.
+
+    Args:
+        path: the note path, as returned by list_positions.
+        type: what kind of round, in any words: Recruiter screen, Hiring manager,
+            Technical, Take-home assignment, Case study, Panel, Final, or other.
+        date: YYYY-MM-DD, past or planned. Leave empty for a round not yet booked.
+        remove: remove the round matching this type (and date, when given)
+            instead of adding one.
+    """
+    writable()
+    row = next((r for r in call("GET", "/api/positions")["positions"] if r["path"] == path), None)
+    if row is None:
+        raise PortalError(f"no position at {path}")
+    rounds = list(row.get("interviews", []))
+    if remove:
+        match = next((i for i, r in enumerate(rounds) if r["type"].casefold() == type.strip().casefold()
+                      and (not date or r["date"] == date)), None)
+        if match is None:
+            raise PortalError(f"no {type} round{' on ' + date if date else ''} to remove")
+        rounds.pop(match)
+    else:
+        rounds.append({"date": date, "type": type})
+    result = call("PUT", "/api/interviews", {"path": path, "interviews": rounds})
+    return {"saved": result["saved"], "statusMoved": result.get("statusMoved", {}),
             "position": summarise(result["row"])}
 
 

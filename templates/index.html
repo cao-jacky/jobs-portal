@@ -93,6 +93,7 @@
   .item.is-warning { border-left-color:var(--warning); }
   .item.is-critical { border-left-color:var(--critical); }
   .item.is-serious { border-left-color:var(--serious); }
+  .item.is-good { border-left-color:var(--good); }
   .item .who { font-weight:560; } .item .what { color:var(--ink-2); flex:1 1 auto; }
   .item .when { font-family:var(--mono); font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums; white-space:nowrap; }
   .empty { font-size:13px; color:var(--ink-muted); font-style:italic; }
@@ -222,6 +223,23 @@
   .doc:hover { border-color:var(--accent); color:var(--accent); text-decoration:none; }
   .doc.ad { border-style:dashed; }
   .drawer .docs { display:flex; gap:6px; flex-wrap:wrap; }
+  .rounds { font-family:var(--mono); font-size:10.5px; line-height:1.4; color:var(--ink-muted); margin-top:4px; max-width:190px; }
+  .rounds .next { color:var(--good-ink); }
+  .interviews { border:1px solid var(--hairline); border-radius:var(--r-md); background:var(--sunken);
+                padding:12px 14px; margin:0 0 20px; display:flex; flex-direction:column; gap:10px; }
+  .interviews h3 { margin:0; font-size:12px; font-weight:600; font-family:var(--mono); letter-spacing:.06em;
+                   text-transform:uppercase; color:var(--ink-muted); }
+  .interviews ol { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; }
+  .interviews li { display:flex; align-items:center; gap:10px; font-size:13.5px; }
+  .interviews li .d { font-family:var(--mono); font-size:12px; color:var(--ink-2); min-width:84px; font-variant-numeric:tabular-nums; }
+  .interviews li .t { flex:1 1 auto; font-weight:520; }
+  .interviews li .rel { font-family:var(--mono); font-size:11px; color:var(--ink-muted); white-space:nowrap; }
+  .interviews li .rel.soon { color:var(--good-ink); }
+  .interviews li button { font-size:11px; padding:2px 8px; }
+  .interviews form { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .interviews form input[type="date"] { width:auto; flex:0 0 auto; }
+  .interviews form input[type="text"] { flex:1 1 180px; width:auto; }
+  .interviews .hint { font-size:12px; color:var(--ink-muted); margin:0; }
   .item .ready { font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:999px;
                  border:1px solid var(--good); color:var(--good-ink); white-space:nowrap; margin-right:6px; }
 
@@ -449,6 +467,11 @@
       <ul class="stack" id="ageing"></ul>
       <p class="panel-note">Sent, no outcome recorded. Past 21 days silence has usually meant no.</p>
     </div>
+    <div class="panel">
+      <h2>Interviews coming up</h2>
+      <ul class="stack" id="upcoming"></ul>
+      <p class="panel-note">Rounds dated today or later, from each note's <code>interviews</code> field.</p>
+    </div>
   </section>
 
   <section class="panel">
@@ -601,6 +624,18 @@
       <span class="grow"></span>
       <button type="button" id="draft-discard">Discard the draft</button>
     </div>
+    <section class="interviews" id="interviews" aria-labelledby="interviews-title" hidden>
+      <h3 id="interviews-title">Interview rounds</h3>
+      <ol id="interview-list"></ol>
+      <form id="interview-form" autocomplete="off">
+        <label class="sr" for="interview-date">Date</label>
+        <input type="date" id="interview-date">
+        <label class="sr" for="interview-type">Type</label>
+        <input type="text" id="interview-type" list="dl-interview" maxlength="80"
+          placeholder="Type, e.g. Recruiter screen, or anything else">
+        <button type="submit">Add round</button>
+      </form>
+    </section>
     <div class="note-body" id="view"></div>
     <div id="letter-view" hidden>
       <div class="checks" id="letter-checks"></div>
@@ -650,6 +685,7 @@
 
 <datalist id="dl-company"></datalist>
 <datalist id="dl-location"></datalist>
+<datalist id="dl-interview"></datalist>
 <canvas id="confetti" aria-hidden="true"></canvas>
 <div id="tip" role="status" aria-live="polite"></div>
 <div id="toast" role="status" aria-live="polite"></div>
@@ -839,6 +875,14 @@ function renderSummary() {
   $("ageing").innerHTML = ageing.length
     ? ageing.map(r => itemRow(r, r.daysOpen > 60 ? "is-critical" : "is-serious", `${r.daysOpen}d silent`)).join("")
     : `<li class="empty">Nothing has been waiting more than 21 days.</li>`;
+  const upcoming = DATA.flatMap(r => (r.interviews || [])
+      .filter(i => i.date && i.date >= CONFIG.today).map(i => ({ row: r, ...i })))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  $("upcoming").innerHTML = upcoming.length
+    ? upcoming.map(u => `<li><button class="item is-good" data-open="${esc(u.row.path)}" title="${esc(u.row.title)}">
+        <span class="who">${esc(u.row.company)}</span><span class="what">${esc(u.type)}</span>
+        <span class="when">${u.date} &middot; ${relDay(u.date)}</span></button></li>`).join("")
+    : `<li class="empty">No rounds booked. Rounds added in a note with a date show up here.</li>`;
 
   const stages = [
     ["Tracked", DATA.length, "var(--stage-1)"], ["Applied", sent.length, "var(--stage-2)"],
@@ -1719,7 +1763,7 @@ function renderLedger() {
         ${excerpt ? `<span class="excerpt" title="${esc(excerpt)}">${highlight(excerpt, state.q)}</span>` : ""}
       </td>
       <td class="loc" data-col="location" data-label="Location">${esc(r.location)}</td>
-      <td data-col="status" data-label="Status">${statusSelect(r)}</td>
+      <td data-col="status" data-label="Status">${statusSelect(r)}${roundsLine(r)}</td>
       <td class="num" data-col="added" data-label="Added">${r.added || "&ndash;"}</td>
       <td class="num" data-col="applied" data-label="Applied">${r.applied || "&ndash;"}</td>
       ${clockCell(r)}
@@ -1755,6 +1799,7 @@ function setEditing(on) {
   $("read-tab").classList.toggle("primary", !on);
   $("edit-tab").classList.toggle("primary", on);
   $("save-state").textContent = on && CONFIG.readOnly ? "read-only mode, saving is disabled" : "";
+  renderInterviews();
 }
 
 function setMode(next) {
@@ -1795,6 +1840,7 @@ function setMode(next) {
     $("revert-btn").hidden = false;
     editing = true;
   }
+  renderInterviews();
 }
 
 function fieldInput(key, value) {
@@ -1819,6 +1865,12 @@ function refreshDatalists() {
   };
   fill("dl-company", DATA.map(r => r.company));
   fill("dl-location", DATA.map(r => r.location));
+  // The configured types first, in their own order, then any typed by hand
+  // elsewhere in the ledger, so a custom type only has to be spelled once.
+  const seen = new Set();
+  $("dl-interview").innerHTML = [...CONFIG.interviewTypes, ...DATA.flatMap(r => (r.interviews || []).map(i => i.type))]
+    .filter(t => { const k = t.toLowerCase(); if (!t || seen.has(k)) return false; seen.add(k); return true; })
+    .map(t => `<option value="${esc(t)}">`).join("");
 }
 
 function formState() {
@@ -2008,6 +2060,123 @@ async function saveNote() {
     $("save-btn").disabled = false;
   }
 }
+
+/* ---------------- interview rounds ----------------
+   Kept in one frontmatter line, `interviews: 2026-07-14 Recruiter screen; ...`.
+   The type is free text; the datalist only suggests. */
+
+const daysFromToday = iso => Math.round((new Date(iso + "T00:00:00") - new Date(CONFIG.today + "T00:00:00")) / 86400000);
+function relDay(iso) {
+  const d = daysFromToday(iso);
+  return d === 0 ? "today" : d > 0 ? `in ${d}d` : `${-d}d ago`;
+}
+
+// The same line the server writes: already sorted, so only joined here.
+const roundsText = rounds => (rounds || []).map(r => [r.date, r.type].filter(Boolean).join(" ")).join("; ");
+
+function roundsLine(row) {
+  const rounds = row.interviews || [];
+  if (!rounds.length) return "";
+  const next = rounds.find(r => r.date && r.date >= CONFIG.today);
+  const all = rounds.map(r => `${r.date || "no date"}  ${r.type}`).join("\n");
+  const tail = next ? `<span class="next">${esc(next.type)} ${relDay(next.date)}</span>` : esc(rounds[rounds.length - 1].type);
+  return `<div class="rounds" title="${esc(all)}">${rounds.length} round${rounds.length > 1 ? "s" : ""} &middot; ${tail}</div>`;
+}
+
+function renderInterviews() {
+  const box = $("interviews");
+  if (!current || mode !== "note" || editing) { box.hidden = true; return; }
+  const rounds = current.interviews || [];
+  box.hidden = CONFIG.readOnly && !rounds.length;
+  $("interview-form").hidden = CONFIG.readOnly;
+  $("interview-list").innerHTML = rounds.length ? rounds.map((r, i) => `<li>
+      <span class="d">${r.date ? esc(r.date) : "no date"}</span>
+      <span class="t">${esc(r.type)}</span>
+      ${r.date ? `<span class="rel${r.date >= CONFIG.today ? " soon" : ""}">${relDay(r.date)}</span>` : ""}
+      ${CONFIG.readOnly ? "" : `<button type="button" class="ghost" data-drop-round="${i}"
+        aria-label="Remove the ${esc(r.type)} round">Remove</button>`}
+    </li>`).join("")
+    : `<li class="empty">No rounds logged. Add one below, with or without a date.</li>`;
+}
+
+/* Bring the page up to date after a save that touched this note, whichever
+   route it went through. */
+function takeSaved(path, result) {
+  const index = DATA.findIndex(r => r.path === path);
+  if (index >= 0) DATA[index] = result.row;
+  if (current && current.path === path) {
+    current.mtime = result.mtime;
+    current.interviews = result.row.interviews;
+    current.frontmatter = { ...(current.frontmatter || {}), job_status: result.row.status };
+    renderDrawerMeta();
+    renderInterviews();
+    const field = $("f-job_status");
+    if (field && !dirty) field.value = result.row.status;
+  }
+  refreshDatalists();
+  renderSummary();
+  renderLedger();
+  resyncFingerprint();
+}
+
+async function saveRounds(rounds, what) {
+  if (!current || CONFIG.readOnly) return false;
+  const path = current.path;
+  const wasWon = WON.has((DATA.find(r => r.path === path) || {}).status || "");
+  try {
+    const result = await api("/api/interviews", {
+      method: "PUT", body: JSON.stringify({ path, interviews: rounds, mtime: current.mtime })
+    });
+    takeSaved(path, result);
+    // The editor holds the raw line too; an untouched form is refreshed so it
+    // cannot write the old rounds back. A draft is the reader's and is left.
+    const raw = $("f-interviews");
+    if (raw && !dirty) raw.value = roundsText(result.row.interviews);
+    const moved = result.statusMoved || {};
+    const prev = result.previous || {};
+    const undo = result.unchanged ? null : {
+      label: "Undo",
+      run: async () => {
+        try {
+          takeSaved(path, await api("/api/note", {
+            method: "PUT", body: JSON.stringify({ path, frontmatter: prev })
+          }));
+          if (raw && !dirty) raw.value = prev.interviews || "";
+          toast("Put back as it was.");
+        } catch (err) { toast(err.message, true); }
+      }
+    };
+    if (moved.to && WON.has(moved.to) && !wasWon) celebrate();
+    toast(moved.to ? `${what}, and the status moved to ${moved.to}.` : `${what}.`, false, undo);
+    return true;
+  } catch (err) {
+    toast(err.message, true);
+    return false;
+  }
+}
+
+$("interview-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!current) return;
+  const date = $("interview-date").value;
+  const type = $("interview-type").value.trim();
+  if (!date && !type) { $("interview-type").focus(); return; }
+  const label = type || "Interview";
+  const rounds = [...(current.interviews || []), { date, type: label }];
+  if (await saveRounds(rounds, `${label} round logged${date ? " for " + date : ""}`)) {
+    $("interview-date").value = "";
+    $("interview-type").value = "";
+  }
+});
+
+$("interview-list").addEventListener("click", event => {
+  const drop = event.target.closest("[data-drop-round]");
+  if (!drop || !current) return;
+  const index = Number(drop.dataset.dropRound);
+  const gone = (current.interviews || [])[index];
+  const rounds = (current.interviews || []).filter((_, i) => i !== index);
+  saveRounds(rounds, `${gone ? gone.type : "Round"} removed`);
+});
 
 async function quickStatus(path, value, clearDates) {
   const existing = DATA.find(r => r.path === path);

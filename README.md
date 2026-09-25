@@ -51,6 +51,14 @@ The advert text.
 `Applied`, `Interview Invitation`, `Interviewed`, `Rejected`, `Not eligible`, and
 `Skipped`.
 
+Interview rounds, when there are any, sit on one optional line: a date and a free
+text type per round, separated by semicolons. Either part can be left out, so a
+round that is expected but not yet booked is just its type:
+
+```yaml
+interviews: 2026-07-14 Recruiter screen; 2026-07-17 Hiring manager; Technical
+```
+
 ## Running it
 
 ### Docker Compose
@@ -112,6 +120,7 @@ built-in subset renderer is used.
 | `AUTH_TOKEN` | unset | When set, every request needs it as a `Bearer` token or `?token=`. The page prompts once and stores it in `localStorage`. `/healthz` stays open so container healthchecks still work. |
 | `READ_ONLY` | unset | Set to `1` to refuse all writes. The UI hides its save controls. |
 | `BACKUPS` | `1` | Copy a note into `.portal-backups/` before overwriting. Set to `0` to disable. |
+| `INTERVIEW_TYPES` | `Recruiter screen, Hiring manager, Technical, …` | Comma-separated interview types to suggest. Suggestions only: any other type can be typed. |
 
 ## Using it
 
@@ -135,6 +144,15 @@ built-in subset renderer is used.
 - **Several rows at once**: tick them and set them all to one status in a single
   confirmed action. Ticks survive a filter change, and the bar says how many of
   the selected rows the current filters are hiding.
+- **Interview rounds** are logged from the open note: a date, if known, and a
+  type. The type is free text. Common types are suggested, along with any type
+  already used somewhere in the ledger, so a type made up once is offered for
+  the next position too. Adding a round moves the status forward to match:
+  Interview Invitation for a round still to come, Interviewed once one is dated
+  today or earlier. A status already past those, such as Rejected, is left
+  alone, and the toast offers **Undo** either way. The ledger shows the round
+  count and the next round under each status, and **Interviews coming up** lists
+  every dated round still ahead.
 - **New position** opens the same panel as a form: every frontmatter field, a
   year-folder select, and a body textarea to paste the advert into. The file is
   named `Positions/<year>/<Company> - <Title>.md` from the company and title.
@@ -310,7 +328,7 @@ or by hand, alongside a remote portal:
 | `PORTAL_ALLOW_WRITES` | `1` | Set to `0` for a read-only server, whatever the portal allows. |
 
 **Tools.** `list_positions`, `get_position`, `search_adverts`, `pipeline_stats`,
-`create_position`, `update_position`, `get_letter`, `save_letter`, `create_letter`,
+`create_position`, `update_position`, `log_interview`, `get_letter`, `save_letter`, `create_letter`,
 `check_letter`, `render_letter_pdf`.
 
 **Resources and prompts are the part that matters.** Tools alone would let a model
@@ -364,6 +382,7 @@ affects rendering only and never the stored file.
 | `GET` | `/api/positions` | All notes as JSON, with derived date arithmetic. |
 | `GET` | `/api/note?path=Positions/…md` | One note: frontmatter, raw body, rendered HTML, mtime. |
 | `PUT` | `/api/note` | Save. `{path, frontmatter?, body?, mtime?}`. Passing `mtime` enables conflict detection. |
+| `PUT` | `/api/interviews` | Replace a note's interview rounds. `{path, interviews:[{date?, type}], mtime?}`. Moves the status forward when a round is added. |
 | `POST` | `/api/notes` | Create. `{frontmatter:{company, job_title, …}, body?, year?}`. |
 | `GET` | `/api/search?q=…` | Substring search over every note's body and frontmatter values. Returns the matching paths with an excerpt each. |
 | `GET` | `/api/changes` | Note count and newest mtime, by `stat` alone, for cheap polling. |

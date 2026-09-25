@@ -15,6 +15,8 @@ Environment:
                   `token` query parameter; the page prompts once and stores it
     READ_ONLY     set to 1 to refuse all writes
     BACKUPS       set to 0 to disable pre-write backups (default: on)
+    INTERVIEW_TYPES  comma-separated interview types to suggest; any other
+                  type can still be typed in by hand
 """
 from __future__ import annotations
 
@@ -72,6 +74,17 @@ STATUSES = [
     "Skipped",
 ]
 NULLISH = {"", "null", "none", "n/a", "tbd", "-"}
+
+# Suggestions only: the type of an interview is free text, and every type
+# already used in the ledger is offered alongside these.
+INTERVIEW_TYPES = [t.strip() for t in os.environ.get(
+    "INTERVIEW_TYPES",
+    "Recruiter screen, Hiring manager, Technical, Take-home assignment, Case study, "
+    "Presentation, Panel, Team fit, Final",
+).split(",") if t.strip()]
+# Statuses an interview being logged is allowed to move forward. Anything past
+# them (Interviewed, Rejected, Skipped) is left as it is.
+INTERVIEW_BUMPABLE = {"", "Unknown", "Not applied", "Applied", "Interview Invitation"}
 
 # Sibling folders holding the documents written for a position. Matched by
 # normalised folder name so the accent in "Résumés" cannot break lookup.
@@ -268,6 +281,48 @@ def parse_front(block: str) -> dict[str, dict]:
         else:
             previous = None
     return fields
+
+
+INTERVIEW_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})?\s*(.*)$", re.S)
+
+
+def clean_interview_type(text: str) -> str:
+    """Keep a type safe to sit inside one plain YAML scalar in a `;` list."""
+    text = re.sub(r"[;#]|:(?=\s|$)", " ", str(text or ""))
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.lstrip("-[]{}>|!&*'\"%@` ").strip()
+
+
+def parse_interviews(value: str | None) -> list[dict]:
+    """`2026-07-14 Recruiter screen; 2026-07-17 Technical` -> [{date, type}, ...].
+
+    Both parts are optional per entry, so a round that is known to be coming
+    but not yet booked can be written as just its type.
+    """
+    rounds = []
+    for part in (value or "").split(";"):
+        part = part.strip()
+        if not part or part.lower() in NULLISH:
+            continue
+        date, kind = INTERVIEW_RE.match(part).groups()
+        if date and parse_date(date) is None:
+            date, kind = None, part
+        rounds.append({"date": date, "type": clean_interview_type(kind) or "Interview"})
+    return rounds
+
+
+def format_interviews(rounds: list[dict]) -> str:
+    """Serialise rounds back to one line, dated ones in order and undated last."""
+    tidy = []
+    for entry in rounds:
+        if not isinstance(entry, dict):
+            continue
+        date = str(entry.get("date") or "").strip()[:10]
+        date = date if parse_date(date) else ""
+        kind = clean_interview_type(entry.get("type", "")) or "Interview"
+        tidy.append((date, kind))
+    order = sorted(range(len(tidy)), key=lambda i: (not tidy[i][0], tidy[i][0], i))
+    return "; ".join(" ".join(filter(None, tidy[i])) for i in order)
 
 
 def split_note(text: str) -> tuple[dict[str, str | None], list[str], str]:
@@ -477,6 +532,7 @@ def row_for(path: Path, today: datetime.date, index: dict[str, list[dict]] | Non
             "rejected": front.get("date_rejected"),
             "deadline": front.get("deadline"),
             "link": front.get("link"),
+            "interviews": parse_interviews(front.get("interviews")),
             "year": path.parent.name,
             "assessed": "## Suitability" in body,
             "words": len(body.split()),
@@ -1054,6 +1110,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             page = page.replace("__CONFIG__", json.dumps({
                 "statuses": STATUSES,
+                "interviewTypes": INTERVIEW_TYPES,
                 "fields": FIELD_ORDER,
                 "readOnly": READ_ONLY,
                 "authRequired": bool(AUTH_TOKEN),
@@ -1181,6 +1238,7 @@ class Handler(BaseHTTPRequestHandler):
                 "body": body.lstrip("\n"),
                 "html": render_markdown(body),
                 "docs": docs_for(path.stem, artefact_index()),
+                "interviews": parse_interviews(front.get("interviews")),
                 "mtime": path.stat().st_mtime,
             })
             return
@@ -1234,7 +1292,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"saved": relative(doc), "backup": saved_backup,
                         "checks": letter_checks(fresh), "mtime": doc.stat().st_mtime})
             return
-        if path_only != "/api/note":
+        if path_only not in {"/api/note", "/api/interviews"}:
             self._error(HTTPStatus.NOT_FOUND, "no such route")
             return
         if READ_ONLY:
@@ -1270,6 +1328,37 @@ class Handler(BaseHTTPRequestHandler):
 
         _front, _order, current_body = split_note(existing)
 
+        # Interviews arrive either as the raw field from the edit form, or as a
+        # list from /api/interviews. The raw field is only rewritten when its
+        # meaning changed, so a hand-formatted line is not reflowed by a save.
+        old_rounds = parse_interviews(_front.get("interviews"))
+        previous: dict[str, str] = {}
+        if path_only == "/api/interviews":
+            rounds = payload.get("interviews")
+            if not isinstance(rounds, list):
+                self._error(HTTPStatus.BAD_REQUEST, "interviews must be a list of {date, type}")
+                return
+            edits = {"interviews": format_interviews(rounds)}
+            previous = {"interviews": _front.get("interviews") or "",
+                        "job_status": _front.get("job_status") or ""}
+        elif "interviews" in edits and parse_interviews(edits["interviews"]) != old_rounds:
+            edits["interviews"] = format_interviews(parse_interviews(edits["interviews"]))
+
+        # Logging a round moves the status forward to match it, never back. Only
+        # the dedicated route does this, so an undo or a hand edit of the raw
+        # field writes exactly what it was given.
+        status_moved: dict[str, str] = {}
+        new_rounds = parse_interviews(edits.get("interviews"))
+        was_status = (_front.get("job_status") or "").strip()
+        if (path_only == "/api/interviews" and len(new_rounds) > len(old_rounds)
+                and was_status in INTERVIEW_BUMPABLE):
+            today_iso = datetime.date.today().isoformat()
+            held = any(r["date"] and r["date"] <= today_iso for r in new_rounds)
+            target = "Interviewed" if held else "Interview Invitation"
+            if target != was_status:
+                edits["job_status"] = target
+                status_moved = {"from": was_status, "to": target}
+
         # Stamp the date a status transition implies, but only when the field
         # would otherwise be left empty, so a date set by hand is never touched.
         auto_filled: dict[str, str] = {}
@@ -1298,6 +1387,8 @@ class Handler(BaseHTTPRequestHandler):
                 "saved": relative(path),
                 "backup": None,
                 "autoFilled": {},
+                "statusMoved": {},
+                "previous": previous,
                 "unchanged": True,
                 "row": row_for(path, today),
                 "mtime": path.stat().st_mtime,
@@ -1311,6 +1402,8 @@ class Handler(BaseHTTPRequestHandler):
             "saved": relative(path),
             "backup": saved_backup,
             "autoFilled": auto_filled,
+            "statusMoved": status_moved,
+            "previous": previous,
             "row": row_for(path, today),
             "mtime": path.stat().st_mtime,
         })
