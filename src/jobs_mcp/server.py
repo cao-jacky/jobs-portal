@@ -169,12 +169,12 @@ def search_adverts(term: str, limit: int = 25) -> dict:
 def pipeline_stats() -> dict:
     """Summarise the application funnel: what is live, stale, resolved and converting."""
     rows = call("GET", "/api/positions")["positions"]
+    won = {"Interview Invitation", "Interviewed", "On-going", "Awaiting decision"}
     sent = [r for r in rows if r["status"] in
-            {"Applied", "Rejected", "Interviewed", "Interview Invitation", "Not eligible"} or r["applied"]]
+            {"Applied", "Rejected", "Not eligible"} | won or r["applied"]]
     live = [r for r in rows if r["status"] == "Applied"]
-    wins = [r for r in rows if r["status"] in {"Interviewed", "Interview Invitation"}]
-    resolved = [r for r in rows if r["status"] in
-                {"Rejected", "Not eligible", "Interviewed", "Interview Invitation"}]
+    wins = [r for r in rows if r["status"] in won]
+    resolved = [r for r in rows if r["status"] in {"Rejected", "Not eligible"} | won]
     gaps = sorted(r["daysToOutcome"] for r in rows
                   if r["daysToOutcome"] is not None and r["daysToOutcome"] >= 0)
     ageing = [r for r in live if (r["daysOpen"] or 0) > 21]
@@ -238,6 +238,7 @@ def update_position(path: str, job_status: str = "", deadline: str = "", locatio
     Args:
         path: the note path, as returned by list_positions.
         job_status: one of Not applied, Applied, Interview Invitation, Interviewed,
+            On-going, Awaiting decision,
             Rejected, Not eligible, Skipped.
         deadline: closing date as YYYY-MM-DD.
         location: city or "Remote".
@@ -264,7 +265,7 @@ def log_interview(path: str, type: str, date: str = "", remove: bool = False) ->
     Rounds are kept in the note's `interviews` frontmatter line. Adding a round
     moves the status forward to match: to "Interviewed" if any round is dated
     today or earlier, otherwise to "Interview Invitation". A status already past
-    those (Interviewed, Rejected, Skipped...) is left alone.
+    those (Interviewed, On-going, Awaiting decision, Rejected...) is left alone.
 
     Args:
         path: the note path, as returned by list_positions.

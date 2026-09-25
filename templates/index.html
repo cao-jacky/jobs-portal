@@ -700,13 +700,16 @@ let dirty = false;
 let editing = false;
 let mode = "note";           // "note" while viewing or editing a file, "new" while creating one
 
-const SENT = new Set(["Applied", "Rejected", "Interviewed", "Interview Invitation", "Not eligible"]);
-const WON = new Set(["Interviewed", "Interview Invitation"]);
+// Every status that means an interview has been offered, which is what the
+// funnel counts as a conversion and when the interview rounds panel shows.
+const WON = new Set(["Interview Invitation", "Interviewed", "On-going", "Awaiting decision"]);
+const SENT = new Set(["Applied", "Rejected", "Not eligible", ...WON]);
 const CLOSED = new Set(["Rejected", "Not eligible"]);
 const ORDER = [...CONFIG.statuses, "Unknown"];
 const TONE = {
   "Not applied": "var(--warning)", "Applied": "var(--accent)",
   "Interview Invitation": "var(--good)", "Interviewed": "var(--good)",
+  "On-going": "var(--good)", "Awaiting decision": "var(--good)",
   "Rejected": "var(--critical)", "Not eligible": "var(--serious)",
   "Skipped": "var(--baseline)", "Unknown": "var(--ink-muted)"
 };
@@ -1927,6 +1930,7 @@ function renderDrawerMeta() {
   if (front.deadline) bits.push("deadline " + front.deadline);
   $("drawer-meta").innerHTML = bits.map(b => `<span>${esc(b)}</span>`).join("");
   fillDrawerStatus(current.path, front.job_status);
+  renderInterviews();              // the panel follows the status, so it comes and goes with it
 }
 
 async function openNote(path) {
@@ -2085,7 +2089,8 @@ function roundsLine(row) {
 
 function renderInterviews() {
   const box = $("interviews");
-  if (!current || mode !== "note" || editing) { box.hidden = true; return; }
+  const status = ((current && current.frontmatter) || {}).job_status || "";
+  if (!current || mode !== "note" || editing || !WON.has(status)) { box.hidden = true; return; }
   const rounds = current.interviews || [];
   box.hidden = CONFIG.readOnly && !rounds.length;
   $("interview-form").hidden = CONFIG.readOnly;
@@ -2344,7 +2349,7 @@ document.addEventListener("click", event => {
     const group = chip.dataset.group;
     const value = chip.dataset.value;
     // Several statuses at once is the common question -- "what is still live?"
-    // is Applied and Interview Invitation and Interviewed together.
+    // is Applied and every interview status together.
     state[group].has(value) ? state[group].delete(value) : state[group].add(value);
     document.querySelectorAll(`.chip[data-group="${group}"]`).forEach(c =>
       c.setAttribute("aria-pressed", String(state[group].has(c.dataset.value))));

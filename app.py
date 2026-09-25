@@ -69,6 +69,8 @@ STATUSES = [
     "Applied",
     "Interview Invitation",
     "Interviewed",
+    "On-going",
+    "Awaiting decision",
     "Rejected",
     "Not eligible",
     "Skipped",
@@ -83,7 +85,7 @@ INTERVIEW_TYPES = [t.strip() for t in os.environ.get(
     "Presentation, Panel, Team fit, Final",
 ).split(",") if t.strip()]
 # Statuses an interview being logged is allowed to move forward. Anything past
-# them (Interviewed, Rejected, Skipped) is left as it is.
+# them (Interviewed, On-going, Awaiting decision, Rejected...) is left as it is.
 INTERVIEW_BUMPABLE = {"", "Unknown", "Not applied", "Applied", "Interview Invitation"}
 
 # Sibling folders holding the documents written for a position. Matched by

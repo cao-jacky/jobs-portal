@@ -48,8 +48,9 @@ The advert text.
 ```
 
 `job_status` drives the metrics. The recognised values are `Not applied`,
-`Applied`, `Interview Invitation`, `Interviewed`, `Rejected`, `Not eligible`, and
-`Skipped`.
+`Applied`, `Interview Invitation`, `Interviewed`, `On-going`, `Awaiting decision`,
+`Rejected`, `Not eligible`, and `Skipped`. The four from `Interview Invitation` to
+`Awaiting decision` all count as an interview in the funnel.
 
 Interview rounds, when there are any, sit on one optional line: a date and a free
 text type per round, separated by semicolons. Either part can be left out, so a
@@ -140,12 +141,13 @@ built-in subset renderer is used.
 - **Filters live in the URL.** Search, status and year are query parameters, so a
   view can be bookmarked, shared and reloaded, and the back button walks through
   them. Status and year chips are multi-select, so "what is still live" is
-  Applied, Interview Invitation and Interviewed pressed together.
+  Applied and the interview statuses pressed together.
 - **Several rows at once**: tick them and set them all to one status in a single
   confirmed action. Ticks survive a filter change, and the bar says how many of
   the selected rows the current filters are hiding.
-- **Interview rounds** are logged from the open note: a date, if known, and a
-  type. The type is free text. Common types are suggested, along with any type
+- **Interview rounds** are logged from the open note once its status is
+  Interview Invitation, Interviewed, On-going or Awaiting decision: a date, if
+  known, and a type. The type is free text. Common types are suggested, along with any type
   already used somewhere in the ledger, so a type made up once is offered for
   the next position too. Adding a round moves the status forward to match:
   Interview Invitation for a round still to come, Interviewed once one is dated
