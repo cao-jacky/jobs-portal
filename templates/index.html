@@ -1976,8 +1976,16 @@ async function openNote(path) {
   const hash = "#" + encodeURIComponent(current.path);
   if (location.hash !== hash) history.replaceState(null, "", hash);
   openPanel();
-  $("close-btn").focus();
+  $("close-btn").focus({ preventScroll: true });
+  renderLedgerInPlace();
+}
+
+// Opening or closing a note from the attention panels must leave the page where
+// it was; rebuilding the ledger rows can otherwise pull the viewport down to it.
+function renderLedgerInPlace() {
+  const y = window.scrollY;
   renderLedger();
+  if (window.scrollY !== y) window.scrollTo(0, y);
 }
 
 function openPanel() {
@@ -1996,12 +2004,14 @@ function closeDrawer() {
   $("scrim").classList.remove("on");
   $("drawer").classList.remove("on");
   $("drawer").setAttribute("aria-hidden", "true");
-  renderLedger();
-  // Send focus back where it came from. The row itself is a fresh node after
-  // the re-render, so it is found again by path rather than held onto.
-  const row = wasPath && document.querySelector(`tbody tr[data-path="${cssEscape(wasPath)}"]`);
-  if (row) { row.focus(); return; }
-  if (drawerOpener && document.contains(drawerOpener)) drawerOpener.focus();
+  renderLedgerInPlace();
+  // Send focus back where it came from, without scrolling: a note opened from
+  // the attention panels must not drag the page down to its ledger row. A row
+  // opener is a fresh node after the re-render, so it is found again by path.
+  const fromRow = drawerOpener && drawerOpener.matches && drawerOpener.matches("tbody tr[data-path]");
+  const row = fromRow && wasPath && document.querySelector(`tbody tr[data-path="${cssEscape(wasPath)}"]`);
+  if (row) { row.focus({ preventScroll: true }); return; }
+  if (drawerOpener && document.contains(drawerOpener)) drawerOpener.focus({ preventScroll: true });
 }
 
 const cssEscape = value => (window.CSS && CSS.escape) ? CSS.escape(value) : value.replace(/["\\]/g, "\\$&");
@@ -2253,7 +2263,7 @@ function openNewForm() {
   setMode("new");
   openPanel();
   const first = $("f-company") || $("f-job_title");
-  if (first) first.focus();
+  if (first) first.focus({ preventScroll: true });
 }
 
 async function submitNewNote() {
@@ -2261,7 +2271,7 @@ async function submitNewNote() {
   $("editor-fields").querySelectorAll("[data-field]").forEach(el => { frontmatter[el.dataset.field] = el.value.trim(); });
   if (!frontmatter.company || !frontmatter.job_title) {
     $("save-state").textContent = "company and job title are both needed";
-    ($("f-company").value ? $("f-job_title") : $("f-company")).focus();
+    ($("f-company").value ? $("f-job_title") : $("f-company")).focus({ preventScroll: true });
     return;
   }
   $("save-btn").disabled = true;
